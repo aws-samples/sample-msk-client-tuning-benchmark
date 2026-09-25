@@ -1,0 +1,4 @@
+results/*
+!results/.gitkeep
+*.tmp
+.DS_Store
