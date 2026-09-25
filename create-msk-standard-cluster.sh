@@ -2,7 +2,7 @@
 # Creates a PRODUCTION MSK Standard cluster for load benchmarking, then creates
 # its topics via the producer host. Run locally (from your laptop).
 #
-# Defaults: kafka.m7g.4xlarge x3, Kafka 3.9.x.kraft, 1000 GB EBS per broker
+# Defaults: kafka.m7g.4xlarge x3, Kafka 3.8.x (ZooKeeper), 1000 GB EBS per broker
 # with 625 MB/s provisioned throughput, IAM auth + TLS, a custom configuration
 # (RF=3, min.insync.replicas=2,
 # unclean.leader.election.enable=false), and 12 topics x 24 partitions.
@@ -24,7 +24,7 @@ PARTITIONS="${6:-24}"
 EBS_GB="${7:-1000}"
 CONFIG_NAME="${CLUSTER_NAME}-config"
 
-KAFKA_VERSION=3.9.x.kraft
+KAFKA_VERSION=3.8.x
 REGION="${AWS_REGION:-us-east-1}"
 PROFILE="${AWS_PROFILE:-main}"
 NETWORK_STACK=LoadBenchmarkNetworkStack
