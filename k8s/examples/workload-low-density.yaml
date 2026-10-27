@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 #
-# workload-low-density.yaml -- low partition and client density (blog test case 1).
+# workload-low-density.yaml -- low partition and client density (blog Test 1, sanity check).
 #
 # A small, simple workload: 2 topics, a handful of producer clients and one
 # consumer group per topic. Use it to smoke-test the harness end to end and to

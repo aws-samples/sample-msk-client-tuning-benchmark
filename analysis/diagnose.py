@@ -118,11 +118,12 @@ MAX_QUERIES_PER_CALL = 500
 MAX_POINTS_PER_CALL = 100800
 
 LINK_TUNING = "docs/client-tuning.md"
-TC = {
-    1: "docs/test-cases/tc1-baseline-vs-tuned-low-density.md",
-    3: "docs/test-cases/tc3-build-up-to-production-density.md",
-    5: "docs/test-cases/tc5-production-shaped-head-to-head.md",
-    7: "docs/test-cases/tc7-one-consumer-per-partition-iam-connections.md",
+# Blog tests: 1 = validate and compare baseline vs tuned head to head, 2 = one factor at a time,
+# 3 = stress-test connections at the maximum client count.
+TEST = {
+    1: "docs/test-cases/test-1-head-to-head.md",
+    2: "docs/test-cases/test-2-one-factor-at-a-time.md",
+    3: "docs/test-cases/test-3-max-client-count.md",
 }
 
 
@@ -392,7 +393,7 @@ def run_checks(c, ids, data):
             F.append(finding(2, title, SKIP, measured, thr, BLOG_EXPRESS, std_only + "; not evaluated."))
         elif wv >= RH_IDLE_MIN:
             F.append(finding(2, title, OK, measured, thr, BLOG_EXPRESS,
-                             "Headroom is fine; to find where it runs out, follow %s." % TC[3]))
+                             "Headroom is fine; to find where it runs out, follow %s." % TEST[2]))
         else:
             cpu_w = cpu.get(wb, (None, None))[0]
             if cpu_w is not None and cpu_w < CPU_MAX_PCT:
@@ -406,7 +407,7 @@ def run_checks(c, ids, data):
             F.append(finding(2, title, status, measured + "; " + why, thr, BLOG_EXPRESS,
                              "Send fewer, fuller requests: compare your client config with "
                              "analysis/check_profile.py and %s (producer and consumer settings), then A/B it "
-                             "as in %s." % (LINK_TUNING, TC[5])))
+                             "as in %s." % (LINK_TUNING, TEST[1])))
 
     # 3. NetworkProcessorAvgIdlePercent
     title = "NetworkProcessorAvgIdlePercent (mean / worst broker)"
@@ -426,7 +427,7 @@ def run_checks(c, ids, data):
         else:
             F.append(finding(3, title, ATTENTION if mean < NP_IDLE_MIN else WARN, measured, thr, BLOG_EXPRESS,
                              "Network threads are busy with connections and requests: reduce connection churn "
-                             "and request count (%s#settings-that-apply-to-both, %s)." % (LINK_TUNING, TC[7])))
+                             "and request count (%s#settings-that-apply-to-both, %s)." % (LINK_TUNING, TEST[3])))
 
     # 4. CPU (CpuUser + CpuSystem)
     title = "Broker CPU (CpuUser + CpuSystem, mean / worst broker)"
@@ -451,7 +452,7 @@ def run_checks(c, ids, data):
         elif peak >= CPU_MAX_PCT:
             F.append(finding(4, title, WARN, measured, thr, DOC_BEST_PRACTICES,
                              "Average is under %.0f%% but 1-minute peaks are not; check whether the peaks line "
-                             "up with rebalances or reconnect storms (%s)." % (CPU_MAX_PCT, TC[5])))
+                             "up with rebalances or reconnect storms (%s)." % (CPU_MAX_PCT, TEST[1])))
         else:
             F.append(finding(4, title, OK, measured, thr, DOC_BEST_PRACTICES, "None needed."))
 
@@ -469,7 +470,7 @@ def run_checks(c, ids, data):
         if size < SMALL_MSG_BYTES:
             F.append(finding(5, title, WARN, measured, thr, "heuristic",
                              "Small messages mean many requests per byte: check linger.ms and batch.size "
-                             "(%s#producer-settings) and measure as in %s." % (LINK_TUNING, TC[1])))
+                             "(%s#producer-settings) and measure as in %s." % (LINK_TUNING, TEST[1])))
         else:
             F.append(finding(5, title, OK, measured, thr, "heuristic", "None needed."))
 
@@ -495,10 +496,10 @@ def run_checks(c, ids, data):
         if wv > mx:
             F.append(finding(6, title, ATTENTION, measured, thr, src,
                              "Reduce partitions (or replicas) per broker or scale out before updating the "
-                             "cluster; see %s for how partition density drives request load." % TC[3]))
+                             "cluster; see %s for how partition density drives request load." % TEST[2]))
         elif wv > rec:
             F.append(finding(6, title, WARN, measured, thr, src,
-                             "Above the recommendation: test this density with your clients (%s)." % TC[3]))
+                             "Above the recommendation: test this density with your clients (%s)." % TEST[2]))
         else:
             F.append(finding(6, title, OK, measured, thr, src, "None needed."))
 
@@ -522,7 +523,7 @@ def run_checks(c, ids, data):
                              (QUOTA_WARN_FRACTION * 100), DOC_QUOTAS,
                              "None needed." if st_ == OK else
                              "Fewer connections per broker: fewer consumer groups or members, shared producers "
-                             "(%s#beyond-client-settings, %s)." % (LINK_TUNING, TC[7])))
+                             "(%s#beyond-client-settings, %s)." % (LINK_TUNING, TEST[3])))
         title_r = "IAM connection creation rate per broker (ConnectionCreationRate, Sum, 1-minute period)"
         rate_max = IAM_MAX_CONN_RATE_T3 if ".t3." in c["instance_type"] else IAM_MAX_CONN_RATE
         thr_r = "< %.0f per second per broker (AWS quota)" % rate_max
@@ -542,7 +543,7 @@ def run_checks(c, ids, data):
                              "None needed." if st_ == OK else
                              "Stop reconnect storms: keep connections.max.idle.ms high, set reconnect.backoff.ms "
                              "(for example 1000), and avoid restarting many clients at once (%s#settings-that-"
-                             "apply-to-both, %s)." % (LINK_TUNING, TC[7])))
+                             "apply-to-both, %s)." % (LINK_TUNING, TEST[3])))
 
     # 8. ProduceMessageConversionsPerSec
     title = "ProduceMessageConversionsPerSec (any broker)"
@@ -605,15 +606,15 @@ def next_steps(c, findings):
     ids = {f["id"] for f in findings if f["status"] in (WARN, ATTENTION)}
     if ids & {2, 4, 5}:
         steps.append("Measure the effect on a test cluster: baseline vs aws-tuned at equal MessagesInPerSec "
-                     "(%s, %s)." % (TC[1], TC[5]))
+                     "(%s)." % TEST[1])
     if ids & {3, 7}:
-        steps.append("Reproduce the connection pattern: %s." % TC[7])
+        steps.append("Reproduce the connection pattern: %s." % TEST[3])
     if 6 in ids:
-        steps.append("Reproduce the partition density: %s." % TC[3])
+        steps.append("Reproduce the partition density: %s." % TEST[2])
     if c["broker_type"] == "Express":
         steps.append("Express brokers: this repository's thresholds and measurements target Standard brokers; "
                      "treat the skipped checks as not evaluated.")
-    steps.append("All test cases: docs/test-cases/README.md.")
+    steps.append("All tests: docs/test-cases/README.md.")
     return steps
 
 

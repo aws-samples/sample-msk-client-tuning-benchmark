@@ -131,7 +131,8 @@ applies to every client without a more specific quota. Quotas are enforced per b
 authentication the Kafka user principal is the IAM role or user ARN. The host role needs
 `kafka-cluster:AlterClusterDynamicConfiguration` (set/delete) and
 `kafka-cluster:DescribeClusterDynamicConfiguration` (describe). While a quota is active,
-watch `ProduceThrottleTime`, `FetchThrottleTime` and `RequestThrottleTime` (PER_BROKER).
+watch `ProduceThrottleTime`, `FetchThrottleTime` and `RequestThrottleTime` (PER_BROKER). How to
+size, apply and tighten quotas as a guardrail: [../docs/quotas.md](../docs/quotas.md).
 
 ## Dashboard (`15-put-dashboard.sh`)
 

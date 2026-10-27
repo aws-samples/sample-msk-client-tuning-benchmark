@@ -5,7 +5,7 @@
 `diagnose.py` is a read-only health check for an Amazon MSK provisioned cluster you already run. Point it at
 your non-production or performance-test cluster while a representative load is running, and in about a minute
 it tells you whether the brokers look **request-bound** (the pattern this repository's client tuning
-addresses), and which test case to run next.
+addresses), and which test to run next.
 
 It reads the cluster description and the `AWS/Kafka` per-broker metrics in Amazon CloudWatch. It doesn't
 connect to Kafka and doesn't change anything.
@@ -69,7 +69,7 @@ the tool still runs checks 1, 5, 6 (with the Express partition table) and 7, pri
                        threads are busy while CPU is 58% (< 60%), so the broker is serving many small requests
             threshold: worst broker >= 40% (heuristic: blog alarm threshold 0.4)
             do:        Send fewer, fuller requests: compare your client config with analysis/check_profile.py
-                       and docs/client-tuning.md, then A/B it as in docs/test-cases/tc5-production-shaped-head-to-head.md.
+                       and docs/client-tuning.md, then A/B it as in docs/test-cases/test-1-head-to-head.md.
 [WARN     ] 5. Average message size (BytesInPerSec / MessagesInPerSec)
             measured:  200 bytes per message (on-wire, after producer compression), 90000 msg/s, 17.2 MiB/s in
 [ATTENTION] 7. IAM connection creation rate per broker (ConnectionCreationRate, Sum, 1-minute period)
@@ -82,8 +82,10 @@ the tool still runs checks 1, 5, 6 (with the Express partition table) and 7, pri
 1. Compare your client configuration with the `aws-tuned` profile:
    `python3 analysis/check_profile.py <your-client.properties>` ([check-profile.md](check-profile.md)).
 2. Reproduce the finding on a test cluster with the matching runbook in [test-cases/](test-cases/README.md):
-   request-handler or CPU findings with test cases 1 and 5, connection findings with test case 7, partition
-   density with test case 3.
+   request-handler, CPU or message-size findings with
+   [Test 1: validate and compare head to head](test-cases/test-1-head-to-head.md), partition density with
+   [Test 2: one factor at a time](test-cases/test-2-one-factor-at-a-time.md), connection findings with
+   [Test 3: maximum client count](test-cases/test-3-max-client-count.md).
 3. Measure baseline against `aws-tuned` at equal `MessagesInPerSec` with `analysis/measure_cluster.py` and
    `analysis/compare.py` ([README](../README.md#measurement-method)).
 

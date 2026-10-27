@@ -70,6 +70,7 @@ Even so, review the output before you share it, and never paste authentication s
 1. Fix ATTENTION findings one key group at a time (producer batching, compression, consumer fetch, assignor).
 2. Put the candidate settings in `scripts/profiles/<p>.properties` and measure them against your `baseline` at
    equal `MessagesInPerSec` ([measurement method](../README.md#measurement-method), `analysis/compare.py`).
-3. Pick the matching test case in the [README](../README.md#blog-test-cases-and-how-to-run-them): test case 1
-   for batching, fetch and compression, test case 4 for rebalances and consumer groups, test case 7 for
-   connection counts.
+3. Pick the matching test in [test-cases/](test-cases/README.md):
+   [Test 1](test-cases/test-1-head-to-head.md) for batching, fetch and compression (baseline vs tuned head to
+   head), [Test 2](test-cases/test-2-one-factor-at-a-time.md) for rebalances and consumer groups (one factor at a
+   time), [Test 3](test-cases/test-3-max-client-count.md) for connection counts.

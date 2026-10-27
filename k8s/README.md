@@ -289,7 +289,7 @@ aws eks delete-pod-identity-association --cluster-name <eks> --association-id <i
 The consumer groups (`bench-cg-*`, `bench-bcast-*`) and their committed offsets stay on
 the MSK cluster until `offsets.retention.minutes` (7 days by default) expires them. You
 can delete them earlier with `kafka-consumer-groups.sh --delete` from a client host (the shipped roles grant
-`kafka-cluster:DeleteGroup` on the benchmark cluster; see `docs/test-cases/README.md`). The
+`kafka-cluster:DeleteGroup` on the benchmark cluster; see [Topics and reset](../docs/test-cases/README.md#topics-and-reset)). The
 topics are not touched.
 
 ## Kafka Streams workloads

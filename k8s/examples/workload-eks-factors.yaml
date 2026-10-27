@@ -1,20 +1,21 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 #
-# workload-eks-factors.yaml -- base workload for blog test case 4 (clients on Amazon EKS).
+# workload-eks-factors.yaml -- base workload for the Amazon EKS optional factors of blog Test 2
+# ("Find what drives the load, one factor at a time").
 #
 # A medium-sized microservice workload that you change ONE factor at a time:
 # the number of consumer groups, the number of producer clients, the consumer
 # worker threads, and (with k8s/kstreams/gen-kstreams.sh) Kafka Streams apps on
-# tc4-streams-1. docs/test-cases/tc4-clients-on-eks.md derives each variant from
-# this file with a single sed substitution, so keep the lines marked VARY unique.
+# eks-factor-streams-1. docs/test-cases/test-2-one-factor-at-a-time.md derives each variant
+# from this file with a single sed substitution, so keep the lines marked VARY unique.
 #
 #   python3 k8s/gen-workload.py k8s/examples/workload-eks-factors.yaml --summary-only
 #   python3 k8s/gen-workload.py k8s/examples/workload-eks-factors.yaml --tuning baseline > /tmp/out.yaml
 #
 # Topics (create them first; the pods do not create topics):
-#   scripts/00-setup-topics.sh <cluster-arn> tc4 4 24            # tc4-1..4, 24 partitions each
-#   scripts/00-setup-topics.sh <cluster-arn> tc4-streams 1 6     # tc4-streams-1, Kafka Streams input
+#   scripts/00-setup-topics.sh <cluster-arn> eks-factor 4 24            # eks-factor-1..4, 24 partitions each
+#   scripts/00-setup-topics.sh <cluster-arn> eks-factor-streams 1 6     # eks-factor-streams-1, Kafka Streams input
 #
 # Node capacity at these requests (requests == limits): consumers 4 x 250m / 512Mi;
 # producers 4 x 1 CPU / 2Gi + 1 x 250m / 512Mi. The variants in the runbook add up to
@@ -43,7 +44,7 @@ resources:
   consumer: {cpu: 250m, memory: 512Mi}
   producer: {cpu: "1", memory: 2Gi}
 
-# One Deployment (one pod, one member) per group, spread round-robin over tc4-1..4.
+# One Deployment (one pod, one member) per group, spread round-robin over eks-factor-1..4.
 consumers:
   total_groups: 4               # VARY (consumer groups step)
   group_prefix: bench-cg
@@ -51,14 +52,14 @@ consumers:
   worker_threads: 0             # VARY (worker threads step); 0 = process on the poll thread
   stagger_ms: 200
   round_robin:
-    topics: ["tc4-{1..4}"]
+    topics: ["eks-factor-{1..4}"]
 
 producers:
-  # One Deployment per tc4 topic. The total rate is fixed, so changing
+  # One Deployment per eks-factor topic. The total rate is fixed, so changing
   # producers_per_pod changes only the number of KafkaProducer clients.
   - name: mp
     layout: per-topic
-    topics: ["tc4-{1..4}"]
+    topics: ["eks-factor-{1..4}"]
     replicas: 1
     producers_per_pod: 2        # VARY (producer count step)
     total_mb_per_sec: 40        # uncompressed; 10 MB/s per topic
@@ -66,7 +67,7 @@ producers:
   # Kafka Streams apps with k8s/kstreams/gen-kstreams.sh.
   - name: mp-streams
     layout: per-topic
-    topics: [tc4-streams-1]
+    topics: [eks-factor-streams-1]
     replicas: 1
     producers_per_pod: 1
     total_mb_per_sec: 1
@@ -74,9 +75,9 @@ producers:
 
 estimate:
   topic_mb_per_sec:
-    "tc4-streams-*": 1
-    "tc4-[0-9]*": 10
+    "eks-factor-streams-*": 1
+    "eks-factor-[0-9]*": 10
   partitions_per_topic:
-    "tc4-streams-*": 6
-    "tc4-[0-9]*": 24
+    "eks-factor-streams-*": 6
+    "eks-factor-[0-9]*": 24
   warn_above_multiple: 4.5

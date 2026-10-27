@@ -27,13 +27,14 @@ You don't need to run the tests in order. Start from the question you have today
 |---|---|---|
 | Is my existing cluster request-bound right now? | [`analysis/diagnose.py`](docs/diagnose.md): read-only health check of a cluster you already run (non-prod or performance) | ~5 minutes, no load, nothing deployed |
 | How far is my client config from the tuned profile? | [`analysis/check_profile.py`](docs/check-profile.md): offline diff of your `.properties` file against `aws-tuned`, with a reason for every setting | ~1 minute, no AWS access |
-| Would the tuned profile help my workload? | [Test case 1](docs/test-cases/tc1-baseline-vs-tuned-low-density.md), then [test case 5](docs/test-cases/tc5-production-shaped-head-to-head.md) with your production client settings in `baseline` | One test cluster, a few hours |
+| Would the tuned profile help my workload? | [Test 1: head to head](docs/test-cases/test-1-head-to-head.md): validate the test cluster against production, then baseline vs tuned at average and peak load | One test cluster, a few hours |
+| What actually drives the load on our brokers? | [Test 2: one factor at a time](docs/test-cases/test-2-one-factor-at-a-time.md): partitions and replication factor, producer instances, consumer and broadcast groups, codec mismatch (plus optional slow consumers, Kafka Streams exactly-once, worker threads) | One factor per run |
+| Will we hit IAM connection limits? | [Test 3: maximum client count](docs/test-cases/test-3-max-client-count.md) | Amazon EKS harness |
 | Snappy, LZ4, or zstd for us? | Codec A/B: `orchestration/run-ab.sh "$CLUSTER_ARN" aws-tuned aws-tuned-snappy` (profiles differ only in `compression.type`) | One A/B run |
-| Do slow consumers, Kafka Streams exactly-once, or worker threads change broker load? | Test cases [2](docs/test-cases/tc2-slow-micro-batch-consumers.md), [4](docs/test-cases/tc4-clients-on-eks.md), [6](docs/test-cases/tc6-peak-load-many-worker-threads.md) | Per question |
-| Will we hit IAM connection limits? | [Test case 7](docs/test-cases/tc7-one-consumer-per-partition-iam-connections.md) | Amazon EKS harness |
-| How do we protect the cluster from one misbehaving client? | [Test case 8](docs/test-cases/tc8-server-side-quotas.md): server-side quotas | Add-on to any run |
+| How do we protect the cluster from one misbehaving client? | [Kafka quotas as a guardrail](docs/quotas.md) | Add-on to any run |
 
-All eight test cases, their prerequisites, and the shared setup are in [docs/test-cases/](docs/test-cases/README.md).
+The blog's full method (capture a production baseline, build a production-shaped test cluster, measure the same way,
+the three tests, and the ready-for-production checklist) is in [docs/test-cases/](docs/test-cases/README.md).
 To compare two profiles end to end on the EC2 harness with one command, use `orchestration/run-ab.sh` (`--dry-run`
 prints every step first); it writes a Markdown report you can share.
 
@@ -49,7 +50,7 @@ prints every step first); it writes a Markdown report you can share.
 - [Bring your own client config](#bring-your-own-client-config)
 - [Measurement method](#measurement-method)
 - [Benchmark integrity rules](#benchmark-integrity-rules)
-- [Blog test cases and how to run them](#blog-test-cases-and-how-to-run-them)
+- [Blog tests and how to run them](#blog-tests-and-how-to-run-them)
 - [Cost](#cost)
 - [Cleanup](#cleanup)
 - [Version notes](#version-notes)
@@ -368,21 +369,20 @@ the rest are on you.
 - **Report the worst broker as well as the mean**, and log the window, profile, workload spec, and cluster
   size for every run.
 
-## Blog test cases and how to run them
+## Blog tests and how to run them
 
-Each test case has a step-by-step runbook (linked below) with prerequisites, exact commands, what to expect,
-what to watch out for, and teardown. The summary column shows the main tools it uses.
+The blog's method has three tests. Each has a step-by-step runbook with prerequisites, exact commands, what good
+looks like, what to watch out for, and teardown. The full method, including capturing a production baseline and
+the ready-for-production checklist, is in [docs/test-cases/](docs/test-cases/README.md).
 
-| # | Test case (blog) | What to run |
+| Test | Blog section | Main tools |
 |---|---|---|
-| 1 | [Baseline vs tuned at low partition density](docs/test-cases/tc1-baseline-vs-tuned-low-density.md) | EC2: `scripts/00-setup-topics.sh` with few partitions, then `scripts/01-start-producers.sh` and `scripts/02-start-consumers.sh`, once per profile. EKS: `k8s/examples/workload-low-density.yaml`. |
-| 2 | [Slow micro-batch consumers](docs/test-cases/tc2-slow-micro-batch-consumers.md) | EC2: `scripts/06-start-slow-consumers.sh` (each consumer sleeps between polls), added to a host that runs the 01/02 load. |
-| 3 | [Build up to production density](docs/test-cases/tc3-build-up-to-production-density.md) | EC2: raise partitions and RF with `scripts/00-setup-topics.sh`, then add many producer instances with `scripts/08-start-multi-producers.sh` and many consumer and broadcast groups with `scripts/07-start-multigroup-consumers.sh`. |
-| 4 | [Clients on Amazon EKS: groups, Streams, producers, worker threads](docs/test-cases/tc4-clients-on-eks.md) | EKS: `k8s/gen-workload.py` with a spec from `k8s/examples/` (vary `consumers.total_groups`, the producer sets, and `consumers.worker_threads`); Kafka Streams ALOS vs EOS with `k8s/kstreams/gen-kstreams.sh <alos\|eos> <num-apps>` and `kstreams-emulator/`. |
-| 5 | [Production-shaped head-to-head](docs/test-cases/tc5-production-shaped-head-to-head.md) | EKS: `k8s/examples/workload-high-density.yaml` (or your own production-shaped spec), generated with `--tuning baseline`, then with `--tuning aws-tuned`, compared at equal `MessagesInPerSec`. |
-| 6 | [Peak load with many worker threads](docs/test-cases/tc6-peak-load-many-worker-threads.md) | EKS: the test case 5 spec at peak producer rate with `consumers.worker_threads` raised (`WORKER_THREADS`, which maps to `MultiGroupConsumer --worker-threads`). |
-| 7 | [One consumer per partition and IAM connection limits](docs/test-cases/tc7-one-consumer-per-partition-iam-connections.md) | EKS: `k8s/examples/workload-one-consumer-per-partition.yaml` (`members_per_group` x `pods_per_group` = partitions); watch `ConnectionCount` and `ConnectionCreationRate` on the dashboard against the Amazon MSK IAM connection quotas. |
-| 8 | [Server-side quotas as a guardrail](docs/test-cases/tc8-server-side-quotas.md) | EC2: `scripts/09-set-client-quotas.sh <cluster-arn> set --request-percentage <n> ...` (dry run by default; add `--apply`), then rerun test case 5. Setting quotas needs `kafka-cluster:AlterClusterDynamicConfiguration` and `kafka-cluster:DescribeClusterDynamicConfiguration`, which the shipped client role does not grant; add them only in your test account. |
+| [Test 1: head to head](docs/test-cases/test-1-head-to-head.md) | Validate the test cluster against production; compare baseline and tuned client profiles head to head | `analysis/diagnose.py` (production baseline), then the EC2 scripts `01`/`02` or `k8s/examples/workload-high-density*.yaml` with `--tuning baseline` and `--tuning aws-tuned`, at average and peak rate; `analysis/compare.py` |
+| [Test 2: one factor at a time](docs/test-cases/test-2-one-factor-at-a-time.md) | Find what drives the load, one factor at a time | `scripts/00-setup-topics.sh` (partitions, RF), `08-start-multi-producers.sh` (producer instances), `07-start-multigroup-consumers.sh` (consumer and broadcast groups), a codec-mismatch topic; optional `06-start-slow-consumers.sh`, `k8s/kstreams/gen-kstreams.sh`, `consumers.worker_threads` |
+| [Test 3: maximum client count](docs/test-cases/test-3-max-client-count.md) | Stress-test connections at your maximum client count | `k8s/examples/workload-one-consumer-per-partition.yaml`; dashboard `ClientConnectionCount` and `ConnectionCreationRate` against the IAM connection quotas; `analysis/diagnose.py` |
+
+Protecting the cluster with Kafka quotas is a guardrail rather than a test: see [docs/quotas.md](docs/quotas.md)
+(`scripts/09-set-client-quotas.sh`, dry run by default).
 
 Supporting tools: `scripts/04-load-status.sh` and `scripts/05-collect-diagnostics.sh` (client-side
 bottlenecks), `scripts/15-put-dashboard.sh` (broker dashboard), and `analysis/` (window metrics and latency).

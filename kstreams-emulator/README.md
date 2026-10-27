@@ -1,9 +1,10 @@
 # kstreams-emulator
 
 A small Kafka Streams application that emulates a typical stateful Kafka Streams microservice
-workload on Amazon Managed Streaming for Apache Kafka (Amazon MSK). It accompanies test case 4
-of the blog post "Right-sizing Amazon MSK by tuning your Kafka clients", and is used to measure
-what `processing.guarantee=at_least_once` (ALOS) and `exactly_once_v2` (EOS) cost the brokers,
+workload on Amazon Managed Streaming for Apache Kafka (Amazon MSK). It accompanies the optional Amazon
+Elastic Kubernetes Service (Amazon EKS) factors of Test 2, "Find what drives the load, one factor at a time"
+([runbook](../docs/test-cases/test-2-one-factor-at-a-time.md)), in the blog post "Right-sizing Amazon MSK by
+tuning your Kafka clients", and is used to measure what `processing.guarantee=at_least_once` (ALOS) and `exactly_once_v2` (EOS) cost the brokers,
 what `commit.interval.ms` costs them, and how the number of stream (worker) threads
 (`NUM_STREAM_THREADS`) changes the picture, mainly through the Amazon CloudWatch metric
 `RequestHandlerAvgIdlePercent`.
@@ -165,7 +166,7 @@ docker run --rm -e BOOTSTRAP_SERVERS=... -e APPLICATION_ID=kse-eos-1 -e PROCESSI
   -e CLIENT_PROPS_FILE=/app/client-tuning.properties kstreams-emulator:0.1.0
 ```
 
-Use a new `APPLICATION_ID` for each test case. Otherwise the group resumes from committed
+Use a new `APPLICATION_ID` for each run. Otherwise the group resumes from committed
 offsets and reuses the internal topics and the local state from the previous run.
 
 ## Output

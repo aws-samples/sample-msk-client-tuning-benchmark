@@ -44,7 +44,7 @@ The roles that the sample creates are scoped as follows:
   Control-plane reads are scoped to the cluster ARN where the API supports it; `kafka:List*` and the CloudWatch
   metric reads use `*` because those APIs do not support resource-level permissions.
   `cloudwatch:PutDashboard` is limited to dashboards.
-- **Client quotas** (test case 8) need `kafka-cluster:AlterClusterDynamicConfiguration` and
+- **Client quotas** ([docs/quotas.md](docs/quotas.md)) need `kafka-cluster:AlterClusterDynamicConfiguration` and
   `kafka-cluster:DescribeClusterDynamicConfiguration`. The shipped role does **not** grant them. Add them
   temporarily, in the test account only, to the principal that runs `scripts/09-set-client-quotas.sh`.
 

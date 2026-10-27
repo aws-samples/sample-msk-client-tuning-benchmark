@@ -73,6 +73,6 @@ a line is not valid JSON, or a label has no matching record.
 ## Start here if you already run Amazon MSK
 
 Run `diagnose.py` against your performance-test cluster while it carries its usual load, then `check_profile.py` on
-your client config, then the matching runbook in [../docs/test-cases/](../docs/test-cases/README.md). Exit codes
+your client config, then the matching test in [../docs/test-cases/](../docs/test-cases/README.md) (Test 1 head to head, Test 2 one factor at a time, Test 3 maximum client count). Exit codes
 for the analysis tools are consistent: 0 = nothing needs attention, 1 = findings to look at (or SUSPECT for
 `compare.py`), 2 = usage or input error.

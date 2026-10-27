@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT-0
 #
 # workload-peak-worker-threads-fewer-pods.yaml -- peak load with many worker threads,
-# fewer consumer pods (blog test case 6, shape B).
+# fewer consumer pods (blog Test 1 peak variant, shape B).
 #
 # Same topics, producers (peak rate) and worker_threads as
 # workload-peak-worker-threads.yaml, but the consumers are consolidated into fewer

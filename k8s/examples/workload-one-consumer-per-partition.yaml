@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 #
-# workload-one-consumer-per-partition.yaml -- one consumer per partition (blog test case 7).
+# workload-one-consumer-per-partition.yaml -- one consumer per partition (blog Test 3).
 #
 # Each consumer group has as many members as its topic has partitions, so every
 # member owns exactly one partition. To keep the pod count manageable, members are

@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 #
-# workload-high-density.yaml -- many topics, groups and producers (blog test case 5).
+# workload-high-density.yaml -- many topics, groups and producers (blog Test 1, head to head).
 #
 # 12 full-volume topics plus one low-volume broadcast topic, 100 consumer groups
 # (one pod each) and 120 producer clients. This is where client tuning shows up

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT-0
 #
 # workload-peak-worker-threads.yaml -- peak load with many worker threads, many
-# consumer groups (blog test case 6, shape A).
+# consumer groups (blog Test 1 peak variant, shape A).
 #
 # workload-high-density-peak.yaml (peak producer rate, 100 consumer groups, one pod
 # each) with consumers.worker_threads raised: each group's poll thread hands every

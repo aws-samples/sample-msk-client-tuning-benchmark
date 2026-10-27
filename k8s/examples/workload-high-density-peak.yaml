@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT-0
 #
 # workload-high-density-peak.yaml -- workload-high-density.yaml at peak producer rate
-# (blog test case 5, "tuned at peak" step; also the base of test case 6).
+# (blog Test 1 head to head, "tuned at peak" step; also the base of the Test 1 peak variant).
 #
 # Identical to workload-high-density.yaml (same topics, groups, producer clients,
 # pods and resources) except that every producer set sends 2x the average rate.

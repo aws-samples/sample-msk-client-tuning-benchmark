@@ -5,7 +5,7 @@
 # Run on a client host (via run-on-host.sh). Sets, describes or deletes a Kafka
 # client quota for the DEFAULT (user, client-id) entity -- i.e. every client that
 # has no more specific quota -- by wrapping kafka-configs.sh. Used for the
-# "client quotas" test case: cap per-client produce/fetch bandwidth and request
+# "Protecting the cluster with Kafka quotas" guardrail (docs/quotas.md): cap per-client produce/fetch bandwidth and request
 # handler time so a misbehaving client cannot saturate the brokers.
 #
 # DRY-RUN BY DEFAULT: prints the kafka-configs.sh command it would run. Pass

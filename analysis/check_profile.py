@@ -41,7 +41,7 @@ DOC_PRODUCER = DOC + "#producer-settings"
 DOC_CONSUMER = DOC + "#consumer-settings"
 DOC_BOTH = DOC + "#settings-that-apply-to-both"
 DOC_BEYOND = DOC + "#beyond-client-settings"
-TEST_CASES = "docs/test-cases/README.md"
+TEST_CASES = "docs/test-cases/README.md"  # index of the blog's three tests
 # Amazon MSK quota page (verified 2026-10-27): IAM access control allows 3000 TCP connections per broker
 # and a connection creation rate of 100/s per broker (M5 and M7g; 4/s for t3).
 MSK_QUOTA_URL = "https://docs.aws.amazon.com/msk/latest/developerguide/limits.html"
@@ -519,7 +519,7 @@ def render(fmt, meta, findings, auth, extras, dup):
             for e in extras:
                 out.append("- `%s` = `%s`" % (e["key"], _md(show(e["key"], e["yours"]))))
         out.append("\nNext: measure changes with an A/B (`orchestration/run-ab.sh`, `analysis/compare.py`); "
-                   "test cases: [%s](%s)." % (TEST_CASES, TEST_CASES))
+                   "tests: [%s](%s)." % (TEST_CASES, TEST_CASES))
         return "\n".join(out)
 
     out.append(head)
@@ -547,7 +547,7 @@ def render(fmt, meta, findings, auth, extras, dup):
     out.append("")
     out.append("Next steps: change one key group at a time and measure it with an A/B at equal MessagesInPerSec")
     out.append("  (orchestration/run-ab.sh <cluster-arn> <profile-a> <profile-b>; analysis/compare.py).")
-    out.append("  Test cases: %s. Settings guide: %s." % (TEST_CASES, DOC))
+    out.append("  Tests: %s. Settings guide: %s." % (TEST_CASES, DOC))
     return "\n".join(out)
 
 
