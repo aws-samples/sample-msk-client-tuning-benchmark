@@ -84,71 +84,37 @@ workload run on fewer or smaller brokers.
 The repository contains two load harnesses that share the same Java clients and client profiles, plus a
 Kafka Streams emulator.
 
-![Amazon MSK client-tuning benchmark architecture: an operator workstation drives an EC2 harness through Amazon S3 and AWS Systems Manager and an Amazon EKS harness through kubectl; both harnesses reach a three-broker Amazon MSK Standard cluster across three Availability Zones over IAM and TLS on port 9098; broker metrics flow to Amazon CloudWatch and the analysis tools read them](docs/architecture.png)
+You use one harness at a time: the Amazon EC2 harness or the Amazon EKS harness. Both drive the same Amazon MSK
+test cluster in a VPC created by the AWS CDK app, and both read the results from Amazon CloudWatch.
 
-<details>
-<summary>Text version of the diagram (Mermaid)</summary>
+### Amazon EC2 harness
 
-```mermaid
-flowchart LR
-  subgraph laptop["Your workstation"]
-    cli["AWS CLI · AWS CDK · eksctl · kubectl"]
-    ana["analysis/ (boto3)<br/>measure_cluster.py · compare.py"]
-  end
-
-  subgraph aws["AWS account (test only)"]
-    s3[("Amazon S3<br/>staging bucket per host stack")]
-    ssm["AWS Systems Manager<br/>Run Command"]
-    ecr[("Amazon ECR<br/>client image")]
-    cw["Amazon CloudWatch<br/>metrics + dashboard"]
-
-    subgraph vpc["VPC (AWS CDK), private subnets in 3 AZs"]
-      subgraph ec2h["EC2 harness"]
-        prod["Producer host (c5n)"]
-        cons["Consumer hosts x N (c5n)"]
-      end
-      subgraph eksh["EKS harness (eksctl)"]
-        pods["Producer / consumer pods<br/>Kafka Streams emulator<br/>(EKS Pod Identity)"]
-      end
-      msk[("Amazon MSK Standard<br/>3 brokers · IAM auth · TLS<br/>PER_BROKER monitoring")]
-    end
-  end
-
-  cli -- "sync scripts/ + profile" --> s3
-  cli -- "run-on-host.sh" --> ssm
-  ssm --> prod
-  ssm --> cons
-  s3 --> prod
-  s3 --> cons
-  cli -- "gen-workload.py, kubectl apply" --> pods
-  ecr --> pods
-  prod -- "SASL/IAM over TLS :9098" --> msk
-  cons -- "SASL/IAM over TLS :9098" --> msk
-  pods -- "SASL/IAM over TLS :9098" --> msk
-  msk -- "broker metrics" --> cw
-  ana -- "GetMetricStatistics / GetMetricData" --> cw
-```
-
-</details>
-
-How it works (numbers match the diagram):
+![Amazon EC2 harness: the operator workstation syncs scripts to Amazon S3 and runs them on the producer and consumer hosts through AWS Systems Manager; the hosts reach three Amazon MSK Standard brokers across three Availability Zones over IAM and TLS on port 9098; broker metrics flow to Amazon CloudWatch](docs/architecture-ec2.png)
 
 1. `orchestration/run-on-host.sh` syncs `scripts/` (including every profile in `scripts/profiles/`) to the Amazon S3
-   staging bucket of each host stack; hosts pull the scripts from Amazon S3 and push run results back to it.
+   staging bucket of each host stack; the hosts pull the scripts and push run results back.
 2. It then runs the script on the host through AWS Systems Manager Run Command (no SSH, no inbound rules).
-3. On the Amazon EKS harness, `kubectl apply -f k8s/base` creates the namespace, ServiceAccount, and the
-   `client-tuning-<profile>` ConfigMaps; `k8s/gen-workload.py` and `k8s/kstreams/gen-kstreams.sh` render the
-   Deployments. Pods pull the client and Kafka Streams emulator images from Amazon ECR and authenticate with
-   Amazon EKS Pod Identity.
-4. Producers and consumers on either harness reach the brokers only over SASL/IAM on TLS, port 9098.
-5. Amazon MSK publishes `PER_BROKER` metrics to Amazon CloudWatch; `scripts/15-put-dashboard.sh` builds the dashboard.
-6. `analysis/diagnose.py` and `analysis/measure_cluster.py` read Amazon CloudWatch; `analysis/compare.py` then
-   compares two recorded windows offline.
+3. The producer and consumer hosts reach the brokers only over SASL/IAM on TLS, port 9098.
+4. Amazon MSK publishes `PER_BROKER` metrics to Amazon CloudWatch; `scripts/15-put-dashboard.sh` builds the dashboard.
+5. `analysis/diagnose.py` and `analysis/measure_cluster.py` read Amazon CloudWatch; `analysis/compare.py` compares two
+   recorded windows offline.
 
-Setup: the AWS CDK app creates the VPC and the EC2 hosts, `create-msk-standard-cluster.sh` creates the Amazon MSK
-cluster, and `eksctl` creates the Amazon EKS cluster. Both harnesses share one VPC and one Amazon MSK test cluster.
-The editable source of the diagram is [docs/architecture.drawio](docs/architecture.drawio) (open it with
-[draw.io](https://www.drawio.com/)).
+### Amazon EKS harness
+
+![Amazon EKS harness: the operator workstation applies manifests with kubectl to an Amazon EKS cluster whose managed node group spans three Availability Zones; pods pull images from Amazon ECR and reach three Amazon MSK Standard brokers over IAM and TLS on port 9098; broker metrics flow to Amazon CloudWatch](docs/architecture-eks.png)
+
+1. `kubectl apply -f k8s/base` creates the namespace, ServiceAccount, and `client-tuning-<profile>` ConfigMaps;
+   `k8s/gen-workload.py` and `k8s/kstreams/gen-kstreams.sh` render the Deployments.
+2. Pods pull the client and Kafka Streams emulator images from Amazon ECR, and authenticate with Amazon EKS Pod Identity.
+3. Producer, consumer, and Kafka Streams pods reach the brokers only over SASL/IAM on TLS, port 9098.
+4. Amazon MSK publishes `PER_BROKER` metrics to Amazon CloudWatch; `scripts/15-put-dashboard.sh` builds the dashboard.
+5. `analysis/diagnose.py` and `analysis/measure_cluster.py` read Amazon CloudWatch; `analysis/compare.py` compares two
+   recorded windows offline.
+
+The EKS harness reuses the VPC from the AWS CDK app, and the topics are created once when you create the
+Amazon MSK cluster (EC2 quick start steps 1-2). The editable sources are
+[docs/architecture-ec2.drawio](docs/architecture-ec2.drawio) and [docs/architecture-eks.drawio](docs/architecture-eks.drawio)
+(open them with [draw.io](https://www.drawio.com/)).
 
 ```
 .
@@ -197,6 +163,8 @@ with `k8s/kstreams/gen-kstreams.sh` to measure what ALOS and EOS cost the broker
 
 ## Quick start: Amazon EC2 harness
 
+Architecture: [Amazon EC2 harness](#amazon-ec2-harness).
+
 The commands below use `us-east-1` and the `default` AWS CLI profile. Replace them with your own values.
 
 ```bash
@@ -234,6 +202,8 @@ Every `run-on-host.sh` call re-syncs `scripts/`, so switching profiles needs no 
 for AWS CDK context options (instance types, consumer host count, VPC CIDR).
 
 ## Quick start: Amazon EKS harness
+
+Architecture: [Amazon EKS harness](#amazon-eks-harness).
 
 The EKS harness reuses the VPC and the Amazon MSK test cluster from the EC2 harness, and it runs the same Java
 clients as pods. `eks/cluster.yaml` creates the EKS Pod Identity role, its association, and the
