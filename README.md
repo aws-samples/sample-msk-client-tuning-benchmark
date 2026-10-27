@@ -19,8 +19,27 @@ Amazon CloudWatch.
 > **WARNING: test clusters only.** The scripts and manifests in this repository create and delete topics and
 > consumer groups, and drive sustained load. Never point them at a production cluster.
 
+## Start here: pick the question you have
+
+You don't need to run the tests in order. Start from the question you have today.
+
+| Your question | Use | Effort |
+|---|---|---|
+| Is my existing cluster request-bound right now? | [`analysis/diagnose.py`](docs/diagnose.md): read-only health check of a cluster you already run (non-prod or performance) | ~5 minutes, no load, nothing deployed |
+| How far is my client config from the tuned profile? | [`analysis/check_profile.py`](docs/check-profile.md): offline diff of your `.properties` file against `aws-tuned`, with a reason for every setting | ~1 minute, no AWS access |
+| Would the tuned profile help my workload? | [Test case 1](docs/test-cases/tc1-baseline-vs-tuned-low-density.md), then [test case 5](docs/test-cases/tc5-production-shaped-head-to-head.md) with your production client settings in `baseline` | One test cluster, a few hours |
+| Snappy, LZ4, or zstd for us? | Codec A/B: `orchestration/run-ab.sh "$CLUSTER_ARN" aws-tuned aws-tuned-snappy` (profiles differ only in `compression.type`) | One A/B run |
+| Do slow consumers, Kafka Streams exactly-once, or worker threads change broker load? | Test cases [2](docs/test-cases/tc2-slow-micro-batch-consumers.md), [4](docs/test-cases/tc4-clients-on-eks.md), [6](docs/test-cases/tc6-peak-load-many-worker-threads.md) | Per question |
+| Will we hit IAM connection limits? | [Test case 7](docs/test-cases/tc7-one-consumer-per-partition-iam-connections.md) | Amazon EKS harness |
+| How do we protect the cluster from one misbehaving client? | [Test case 8](docs/test-cases/tc8-server-side-quotas.md): server-side quotas | Add-on to any run |
+
+All eight test cases, their prerequisites, and the shared setup are in [docs/test-cases/](docs/test-cases/README.md).
+To compare two profiles end to end on the EC2 harness with one command, use `orchestration/run-ab.sh` (`--dry-run`
+prints every step first); it writes a Markdown report you can share.
+
 ## Contents
 
+- [Start here: pick the question you have](#start-here-pick-the-question-you-have)
 - [What drives broker saturation](#what-drives-broker-saturation)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
@@ -64,6 +83,49 @@ workload run on fewer or smaller brokers.
 
 The repository contains two load harnesses that share the same Java clients and client profiles, plus a
 Kafka Streams emulator.
+
+```mermaid
+flowchart LR
+  subgraph laptop["Your workstation"]
+    cli["AWS CLI · AWS CDK · eksctl · kubectl"]
+    ana["analysis/ (boto3)<br/>measure_cluster.py · compare.py"]
+  end
+
+  subgraph aws["AWS account (test only)"]
+    s3[("Amazon S3<br/>staging bucket per host stack")]
+    ssm["AWS Systems Manager<br/>Run Command"]
+    ecr[("Amazon ECR<br/>client image")]
+    cw["Amazon CloudWatch<br/>metrics + dashboard"]
+
+    subgraph vpc["VPC (AWS CDK), private subnets in 3 AZs"]
+      subgraph ec2h["EC2 harness"]
+        prod["Producer host (c5n)"]
+        cons["Consumer hosts x N (c5n)"]
+      end
+      subgraph eksh["EKS harness (eksctl)"]
+        pods["Producer / consumer pods<br/>Kafka Streams emulator<br/>(EKS Pod Identity)"]
+      end
+      msk[("Amazon MSK Standard<br/>3 brokers · IAM auth · TLS<br/>PER_BROKER monitoring")]
+    end
+  end
+
+  cli -- "sync scripts/ + profile" --> s3
+  cli -- "run-on-host.sh" --> ssm
+  ssm --> prod
+  ssm --> cons
+  s3 --> prod
+  s3 --> cons
+  cli -- "gen-workload.py, kubectl apply" --> pods
+  ecr --> pods
+  prod -- "SASL/IAM over TLS :9098" --> msk
+  cons -- "SASL/IAM over TLS :9098" --> msk
+  pods -- "SASL/IAM over TLS :9098" --> msk
+  msk -- "broker metrics" --> cw
+  ana -- "GetMetricStatistics / GetMetricData" --> cw
+```
+
+Both harnesses share one VPC and one Amazon MSK test cluster. An editable diagram with AWS Architecture Icons is in
+[docs/architecture.drawio](docs/architecture.drawio) (open it with [draw.io](https://www.drawio.com/)).
 
 ```
 .
@@ -196,9 +258,10 @@ scaling, and the container environment contract.
 
 ## Client profiles
 
-Two profiles ship with the repository. `scripts/profiles/<profile>.properties` is the source of truth;
-`k8s/base/30-configmap-client-tuning-baseline.yaml` and `k8s/base/31-configmap-client-tuning-aws-tuned.yaml`
-carry the same values for the EKS harness.
+Two main profiles ship with the repository, plus two codec variants of `aws-tuned` (`aws-tuned-snappy`,
+`aws-tuned-lz4`) that differ only in `compression.type`, for a one-variable codec A/B.
+`scripts/profiles/<profile>.properties` is the source of truth; the `k8s/base/3*-configmap-client-tuning-*.yaml`
+ConfigMaps carry the same values for the EKS harness.
 
 | Setting | `baseline` (Apache Kafka 3.9 client defaults; replace with your production values) | `aws-tuned` |
 |---|---|---|
@@ -314,16 +377,19 @@ the rest are on you.
 
 ## Blog test cases and how to run them
 
+Each test case has a step-by-step runbook (linked below) with prerequisites, exact commands, what to expect,
+what to watch out for, and teardown. The summary column shows the main tools it uses.
+
 | # | Test case (blog) | What to run |
 |---|---|---|
-| 1 | Baseline vs tuned at low partition density | EC2: `scripts/00-setup-topics.sh` with few partitions, then `scripts/01-start-producers.sh` and `scripts/02-start-consumers.sh`, once per profile. EKS: `k8s/examples/workload-low-density.yaml`. |
-| 2 | Slow micro-batch consumers | EC2: `scripts/06-start-slow-consumers.sh` (each consumer sleeps between polls), added to a host that runs the 01/02 load. |
-| 3 | Build up to production density | EC2: raise partitions and RF with `scripts/00-setup-topics.sh`, then add many producer instances with `scripts/08-start-multi-producers.sh` and many consumer and broadcast groups with `scripts/07-start-multigroup-consumers.sh`. |
-| 4 | Clients on Amazon EKS: groups, Streams, producers, worker threads | EKS: `k8s/gen-workload.py` with a spec from `k8s/examples/` (vary `consumers.total_groups`, the producer sets, and `consumers.worker_threads`); Kafka Streams ALOS vs EOS with `k8s/kstreams/gen-kstreams.sh <alos\|eos> <num-apps>` and `kstreams-emulator/`. |
-| 5 | Production-shaped head-to-head | EKS: `k8s/examples/workload-high-density.yaml` (or your own production-shaped spec), generated with `--tuning baseline`, then with `--tuning aws-tuned`, compared at equal `MessagesInPerSec`. |
-| 6 | Peak load with many worker threads | EKS: the test case 5 spec at peak producer rate with `consumers.worker_threads` raised (`WORKER_THREADS`, which maps to `MultiGroupConsumer --worker-threads`). |
-| 7 | One consumer per partition and IAM connection limits | EKS: `k8s/examples/workload-one-consumer-per-partition.yaml` (`members_per_group` x `pods_per_group` = partitions); watch `ConnectionCount` and `ConnectionCreationRate` on the dashboard against the Amazon MSK IAM connection quotas. |
-| 8 | Server-side quotas as a guardrail | EC2: `scripts/09-set-client-quotas.sh <cluster-arn> set --request-percentage <n> ...` (dry run by default; add `--apply`), then rerun test case 5. Setting quotas needs `kafka-cluster:AlterClusterDynamicConfiguration` and `kafka-cluster:DescribeClusterDynamicConfiguration`, which the shipped client role does not grant; add them only in your test account. |
+| 1 | [Baseline vs tuned at low partition density](docs/test-cases/tc1-baseline-vs-tuned-low-density.md) | EC2: `scripts/00-setup-topics.sh` with few partitions, then `scripts/01-start-producers.sh` and `scripts/02-start-consumers.sh`, once per profile. EKS: `k8s/examples/workload-low-density.yaml`. |
+| 2 | [Slow micro-batch consumers](docs/test-cases/tc2-slow-micro-batch-consumers.md) | EC2: `scripts/06-start-slow-consumers.sh` (each consumer sleeps between polls), added to a host that runs the 01/02 load. |
+| 3 | [Build up to production density](docs/test-cases/tc3-build-up-to-production-density.md) | EC2: raise partitions and RF with `scripts/00-setup-topics.sh`, then add many producer instances with `scripts/08-start-multi-producers.sh` and many consumer and broadcast groups with `scripts/07-start-multigroup-consumers.sh`. |
+| 4 | [Clients on Amazon EKS: groups, Streams, producers, worker threads](docs/test-cases/tc4-clients-on-eks.md) | EKS: `k8s/gen-workload.py` with a spec from `k8s/examples/` (vary `consumers.total_groups`, the producer sets, and `consumers.worker_threads`); Kafka Streams ALOS vs EOS with `k8s/kstreams/gen-kstreams.sh <alos\|eos> <num-apps>` and `kstreams-emulator/`. |
+| 5 | [Production-shaped head-to-head](docs/test-cases/tc5-production-shaped-head-to-head.md) | EKS: `k8s/examples/workload-high-density.yaml` (or your own production-shaped spec), generated with `--tuning baseline`, then with `--tuning aws-tuned`, compared at equal `MessagesInPerSec`. |
+| 6 | [Peak load with many worker threads](docs/test-cases/tc6-peak-load-many-worker-threads.md) | EKS: the test case 5 spec at peak producer rate with `consumers.worker_threads` raised (`WORKER_THREADS`, which maps to `MultiGroupConsumer --worker-threads`). |
+| 7 | [One consumer per partition and IAM connection limits](docs/test-cases/tc7-one-consumer-per-partition-iam-connections.md) | EKS: `k8s/examples/workload-one-consumer-per-partition.yaml` (`members_per_group` x `pods_per_group` = partitions); watch `ConnectionCount` and `ConnectionCreationRate` on the dashboard against the Amazon MSK IAM connection quotas. |
+| 8 | [Server-side quotas as a guardrail](docs/test-cases/tc8-server-side-quotas.md) | EC2: `scripts/09-set-client-quotas.sh <cluster-arn> set --request-percentage <n> ...` (dry run by default; add `--apply`), then rerun test case 5. Setting quotas needs `kafka-cluster:AlterClusterDynamicConfiguration` and `kafka-cluster:DescribeClusterDynamicConfiguration`, which the shipped client role does not grant; add them only in your test account. |
 
 Supporting tools: `scripts/04-load-status.sh` and `scripts/05-collect-diagnostics.sh` (client-side
 bottlenecks), `scripts/15-put-dashboard.sh` (broker dashboard), and `analysis/` (window metrics and latency).

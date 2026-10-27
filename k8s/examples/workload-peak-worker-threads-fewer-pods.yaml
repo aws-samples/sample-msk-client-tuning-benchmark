@@ -1,0 +1,103 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# workload-peak-worker-threads-fewer-pods.yaml -- peak load with many worker threads,
+# fewer consumer pods (blog test case 6, shape B).
+#
+# Same topics, producers (peak rate) and worker_threads as
+# workload-peak-worker-threads.yaml, but the consumers are consolidated into fewer
+# groups, so fewer pods each do more of the work: the 24 groups on the full-volume
+# topics are kept, and the 76 broadcast groups on bcast-1 become 12. Both the group
+# count and the worker thread count are EXAMPLES; use the consolidated shape you are
+# evaluating. Egress is lower than in shape A because there are fewer bcast-1 groups.
+#
+#   python3 k8s/gen-workload.py k8s/examples/workload-peak-worker-threads-fewer-pods.yaml --summary-only
+#   python3 k8s/gen-workload.py k8s/examples/workload-peak-worker-threads-fewer-pods.yaml --tuning baseline > /tmp/out.yaml
+#   python3 k8s/gen-workload.py k8s/examples/workload-peak-worker-threads-fewer-pods.yaml --tuning aws-tuned > /tmp/out.yaml
+#
+# Topics (create them first):
+#   scripts/00-setup-topics.sh <cluster-arn> load-bench 12 100   # load-bench-1..12, 100 partitions each
+#   scripts/00-setup-topics.sh <cluster-arn> bcast 1 20          # bcast-1, 20 partitions
+#
+# Node capacity at these requests (requests == limits): consumers 36 x 250m / 512Mi
+# = 9 vCPU / 18 GiB; producers 12 x 1 CPU / 2Gi + 1 x 250m / 512Mi = 12.25 vCPU / 24.5 GiB.
+
+name: peak-worker-threads-fewer-pods
+namespace: msk-bench
+
+image: 111122223333.dkr.ecr.us-east-1.amazonaws.com/msk-bench-client:latest
+image_pull_policy: IfNotPresent
+
+tuning: aws-tuned
+
+service_account: msk-bench-client
+bootstrap_configmap: msk-bootstrap
+aws_region: us-east-1
+report_interval_ms: 60000
+record_size: 1000
+
+# Add "topology.kubernetes.io/zone" to also spread across Availability Zones.
+spread:
+  topology_keys: [kubernetes.io/hostname]
+  max_skew: 1
+  when_unsatisfiable: ScheduleAnyway
+
+resources:
+  consumer: {cpu: 250m, memory: 512Mi}
+  producer: {cpu: "1", memory: 2Gi}
+
+java_opts:
+  consumer: "-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError"
+  producer: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
+
+# ---------------------------------------------------------------------------------
+# CONSUMERS: one Deployment (one pod) per group; group id = <prefix>-<i>. 36 pods.
+# Every group reads ALL of its topic, so at peak a group on a 20 MB/s topic adds
+# 20 MB/s of egress and a group on bcast-1 adds 1 MB/s. gen-workload.py prints the egress
+# arithmetic for every mode configured below.
+#   low-volume-topics (selected): 24 groups on the full-volume topics (2 each), the
+#                     other 12 on bcast-1 -> 24 x 20 + 12 x 1 = 492 MB/s = ~2.0x ingress
+#   round-robin       (alternative): 36 groups over 13 topics; the generator prints the
+#                     arithmetic and a WARNING if it exceeds warn_above_multiple.
+# ---------------------------------------------------------------------------------
+consumers:
+  total_groups: 36              # 24 on load-bench-1..12 + 12 on bcast-1
+  group_prefix: bench-cg
+  fanout_mode: low-volume-topics
+  worker_threads: 16            # EXAMPLE: processing threads per group (0 = poll thread)
+
+  low_volume_topics:
+    heavy_topics: ["load-bench-{1..12}"]
+    heavy_groups: 24
+    low_topics: [bcast-1]
+    heavy_group_prefix: bench-cg
+    low_group_prefix: bench-bcast
+
+  round_robin:
+    topics: ["load-bench-{1..12}", bcast-1]
+
+# ---------------------------------------------------------------------------------
+# PRODUCERS: one Deployment per full-volume topic with 10 clients each (120 total),
+# plus a single feeder for the broadcast topic. Rates are 2x workload-high-density.yaml.
+# ---------------------------------------------------------------------------------
+producers:
+  - name: mp
+    layout: per-topic
+    topics: ["load-bench-{1..12}"]
+    replicas: 1
+    producers_per_pod: 10
+    total_mb_per_sec: 240       # uncompressed; 20 MB/s per topic (2x average)
+  - name: mp-bcast
+    layout: per-topic
+    topics: [bcast-1]
+    replicas: 1
+    producers_per_pod: 1
+    total_mb_per_sec: 1         # 2x average
+    resources: {cpu: 250m, memory: 512Mi}
+
+estimate:
+  topic_mb_per_sec:
+    "load-bench-*": 20
+    bcast-1: 1
+  # reference_egress_multiple: 2.0   # optional: the egress/ingress ratio you want to match
+  warn_above_multiple: 2.5

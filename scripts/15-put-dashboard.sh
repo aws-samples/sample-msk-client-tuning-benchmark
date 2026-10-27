@@ -214,6 +214,17 @@ client_conn = [
 widgets.append(widget(12, 60, 12, 6, "ClientConnectionCount (authenticated client connections, per broker)",
                       client_conn, stat="Maximum"))
 
+# Row 12: throttling (client quotas, test case 8). Non-zero only while a quota is
+# throttling a client; emitted at PER_BROKER monitoring and above.
+widgets.append(widget(0, 66, 12, 6,
+                      "Produce / Fetch throttle time ms (per broker) -- 0 unless a quota throttles",
+                      broker_metrics("ProduceThrottleTime") +
+                      [[NS, "FetchThrottleTime", "Cluster Name", cluster, "Broker ID", b,
+                        {"label": f"broker-{b} fetch", "stat": "Average", "period": 60}] for b in brokers]))
+widgets.append(widget(12, 66, 12, 6,
+                      "RequestThrottleTime ms (request_percentage quota, per broker)",
+                      broker_metrics("RequestThrottleTime")))
+
 print(json.dumps({"widgets": widgets}))
 PY
 

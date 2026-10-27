@@ -1,0 +1,50 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ConfigMap client-tuning-aws-tuned-snappy, generated from scripts/profiles/aws-tuned-snappy.properties.
+# Codec A/B variant: identical to client-tuning-aws-tuned (31-...) except compression.type=snappy.
+# Regenerate rather than hand-edit (run from the repo root):
+#   kubectl create configmap client-tuning-aws-tuned-snappy -n msk-bench \
+#     --from-file=client-tuning.properties=scripts/profiles/aws-tuned-snappy.properties \
+#     --dry-run=client -o yaml > k8s/base/32-configmap-client-tuning-aws-tuned-snappy.yaml
+# (then re-add this header and the app.kubernetes.io/part-of label)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: client-tuning-aws-tuned-snappy
+  namespace: msk-bench
+  labels:
+    app.kubernetes.io/part-of: msk-bench
+data:
+  client-tuning.properties: |
+    # Profile: aws-tuned-snappy (codec A/B variant of aws-tuned: only compression.type differs)
+    #
+    # The same file is merged into BOTH the producer and the consumer config, so each
+    # client sees the other side's keys too. Kafka ignores unknown keys and only logs a
+    # "supplied but isn't a known config" WARN at startup; this is harmless.
+    #
+    # ---- Producer ----
+    acks=all
+    linger.ms=25
+    batch.size=131072
+    buffer.memory=67108864
+    compression.type=snappy
+    send.buffer.bytes=-1
+    max.in.flight.requests.per.connection=5
+    enable.idempotence=true
+
+    # ---- Consumer ----
+    fetch.min.bytes=128
+    fetch.max.wait.ms=1000
+    max.partition.fetch.bytes=1048576
+    max.poll.records=1000
+    max.poll.interval.ms=300000
+    session.timeout.ms=45000
+    heartbeat.interval.ms=3000
+    partition.assignment.strategy=org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+    receive.buffer.bytes=-1
+    # Kafka default; keep >= 5 s to avoid extra offset-commit load on the brokers.
+    auto.commit.interval.ms=5000
+
+    # ---- Both ----
+    connections.max.idle.ms=540000

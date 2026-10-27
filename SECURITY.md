@@ -63,6 +63,9 @@ The roles that the sample creates are scoped as follows:
   all Linux capabilities dropped.
 - Client profiles cannot override authentication: the EC2 scripts and the container entrypoint refuse to start
   a client whose profile sets `security.protocol` or `sasl.*` settings.
+- `analysis/diagnose.py` and `analysis/measure_cluster.py` make read-only API calls only (`kafka:DescribeClusterV2`,
+  `kafka:ListNodes`, `cloudwatch:GetMetric*`), so you can point them at an existing non-production cluster.
+  `analysis/check_profile.py` runs offline and redacts secret-looking values in its output.
 - The analysis tools call Amazon CloudWatch through the AWS SDK for Python (boto3), not through a shell, and
   validate every argument before use.
 
@@ -74,7 +77,7 @@ the code for anything longer-lived.
 | Item | Category | Rationale |
 |---|---|---|
 | The Amazon EKS API endpoint in `eks/cluster.yaml` is public and private | Security debt | Operator convenience for a short-lived test cluster; access still requires IAM authentication. Restrict `publicAccessCIDRs` or make the endpoint private. |
-| The client role can delete topics and alter groups on the benchmark cluster | Accepted (function) | The harness recreates topics and consumer groups between runs. The permission is scoped to the benchmark cluster's ARNs. |
+| The client role can delete topics and delete or alter consumer groups on the benchmark cluster | Accepted (function) | The harness recreates topics and consumer groups between runs. The permission is scoped to the benchmark cluster's ARNs. |
 | Operating-system packages (`dnf`, `apt-get`) are not version-pinned | Security debt | Installed from the distribution repositories over HTTPS at build or boot time. Pin or mirror them if your policy requires it. |
 | Client hosts carry the `AmazonSSMManagedInstanceCore` managed policy | Accepted (function) | Required for AWS Systems Manager Run Command, which replaces SSH. |
 | Client container images have no Docker `HEALTHCHECK` | Accepted (platform) | Kubernetes ignores Docker `HEALTHCHECK`; the clients exit non-zero on failure and Kubernetes restarts them. |

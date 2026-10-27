@@ -1,0 +1,100 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# workload-high-density-peak.yaml -- workload-high-density.yaml at peak producer rate
+# (blog test case 5, "tuned at peak" step; also the base of test case 6).
+#
+# Identical to workload-high-density.yaml (same topics, groups, producer clients,
+# pods and resources) except that every producer set sends 2x the average rate.
+# 2x is an EXAMPLE: set total_mb_per_sec and estimate.topic_mb_per_sec to your
+# production peak-to-average ratio. Only the rate changes, so the comparison with
+# the average-rate run shows what the peak costs on the same client shape.
+#
+#   python3 k8s/gen-workload.py k8s/examples/workload-high-density-peak.yaml --summary-only
+#   python3 k8s/gen-workload.py k8s/examples/workload-high-density-peak.yaml --tuning aws-tuned > /tmp/out.yaml
+#
+# Topics (create them first):
+#   scripts/00-setup-topics.sh <cluster-arn> load-bench 12 100   # load-bench-1..12, 100 partitions each
+#   scripts/00-setup-topics.sh <cluster-arn> bcast 1 20          # bcast-1, 20 partitions
+#
+# Node capacity at these requests (requests == limits): consumers 100 x 250m / 512Mi
+# = 25 vCPU / 50 GiB; producers 12 x 1 CPU / 2Gi + 1 x 250m / 512Mi = 12.25 vCPU / 24.5 GiB.
+
+name: high-density-peak
+namespace: msk-bench
+
+image: 111122223333.dkr.ecr.us-east-1.amazonaws.com/msk-bench-client:latest
+image_pull_policy: IfNotPresent
+
+tuning: aws-tuned
+
+service_account: msk-bench-client
+bootstrap_configmap: msk-bootstrap
+aws_region: us-east-1
+report_interval_ms: 60000
+record_size: 1000
+
+# Add "topology.kubernetes.io/zone" to also spread across Availability Zones.
+spread:
+  topology_keys: [kubernetes.io/hostname]
+  max_skew: 1
+  when_unsatisfiable: ScheduleAnyway
+
+resources:
+  consumer: {cpu: 250m, memory: 512Mi}
+  producer: {cpu: "1", memory: 2Gi}
+
+java_opts:
+  consumer: "-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError"
+  producer: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
+
+# ---------------------------------------------------------------------------------
+# CONSUMERS: one Deployment (one pod) per group; group id = <prefix>-<i>.
+# Every group reads ALL of its topic, so at peak a group on a 20 MB/s topic adds
+# 20 MB/s of egress and a group on bcast-1 adds 1 MB/s. gen-workload.py prints the egress
+# arithmetic for every mode configured below.
+#   low-volume-topics (selected): 24 groups on the full-volume topics (2 each), the
+#                     other 76 on bcast-1 -> 24 x 20 + 76 x 1 = 556 MB/s = ~2.3x ingress
+#   round-robin       (alternative): 100 groups over 13 topics -> ~7.7x ingress; the
+#                     generator prints a WARNING because it exceeds warn_above_multiple.
+# ---------------------------------------------------------------------------------
+consumers:
+  total_groups: 100
+  group_prefix: bench-cg
+  fanout_mode: low-volume-topics
+
+  low_volume_topics:
+    heavy_topics: ["load-bench-{1..12}"]
+    heavy_groups: 24
+    low_topics: [bcast-1]
+    heavy_group_prefix: bench-cg
+    low_group_prefix: bench-bcast
+
+  round_robin:
+    topics: ["load-bench-{1..12}", bcast-1]
+
+# ---------------------------------------------------------------------------------
+# PRODUCERS: one Deployment per full-volume topic with 10 clients each (120 total),
+# plus a single feeder for the broadcast topic. Rates are 2x workload-high-density.yaml.
+# ---------------------------------------------------------------------------------
+producers:
+  - name: mp
+    layout: per-topic
+    topics: ["load-bench-{1..12}"]
+    replicas: 1
+    producers_per_pod: 10
+    total_mb_per_sec: 240       # uncompressed; 20 MB/s per topic (2x average)
+  - name: mp-bcast
+    layout: per-topic
+    topics: [bcast-1]
+    replicas: 1
+    producers_per_pod: 1
+    total_mb_per_sec: 1         # 2x average
+    resources: {cpu: 250m, memory: 512Mi}
+
+estimate:
+  topic_mb_per_sec:
+    "load-bench-*": 20
+    bcast-1: 1
+  # reference_egress_multiple: 2.0   # optional: the egress/ingress ratio you want to match
+  warn_above_multiple: 2.5

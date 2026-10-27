@@ -18,6 +18,7 @@
         "kafka-cluster:WriteDataIdempotently",
         "kafka-cluster:AlterGroup",
         "kafka-cluster:DescribeGroup",
+        "kafka-cluster:DeleteGroup",
         "kafka-cluster:DescribeTransactionalId",
         "kafka-cluster:AlterTransactionalId"
       ],

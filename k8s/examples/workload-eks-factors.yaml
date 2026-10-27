@@ -1,0 +1,82 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# workload-eks-factors.yaml -- base workload for blog test case 4 (clients on Amazon EKS).
+#
+# A medium-sized microservice workload that you change ONE factor at a time:
+# the number of consumer groups, the number of producer clients, the consumer
+# worker threads, and (with k8s/kstreams/gen-kstreams.sh) Kafka Streams apps on
+# tc4-streams-1. docs/test-cases/tc4-clients-on-eks.md derives each variant from
+# this file with a single sed substitution, so keep the lines marked VARY unique.
+#
+#   python3 k8s/gen-workload.py k8s/examples/workload-eks-factors.yaml --summary-only
+#   python3 k8s/gen-workload.py k8s/examples/workload-eks-factors.yaml --tuning baseline > /tmp/out.yaml
+#
+# Topics (create them first; the pods do not create topics):
+#   scripts/00-setup-topics.sh <cluster-arn> tc4 4 24            # tc4-1..4, 24 partitions each
+#   scripts/00-setup-topics.sh <cluster-arn> tc4-streams 1 6     # tc4-streams-1, Kafka Streams input
+#
+# Node capacity at these requests (requests == limits): consumers 4 x 250m / 512Mi;
+# producers 4 x 1 CPU / 2Gi + 1 x 250m / 512Mi. The variants in the runbook add up to
+# 16 consumer pods (4 vCPU / 8 GiB).
+
+name: eks-factors
+namespace: msk-bench
+
+image: 111122223333.dkr.ecr.us-east-1.amazonaws.com/msk-bench-client:latest
+image_pull_policy: IfNotPresent
+
+tuning: baseline
+
+service_account: msk-bench-client
+bootstrap_configmap: msk-bootstrap
+aws_region: us-east-1
+report_interval_ms: 60000
+record_size: 1000
+
+spread:
+  topology_keys: [kubernetes.io/hostname]
+  max_skew: 1
+  when_unsatisfiable: ScheduleAnyway
+
+resources:
+  consumer: {cpu: 250m, memory: 512Mi}
+  producer: {cpu: "1", memory: 2Gi}
+
+# One Deployment (one pod, one member) per group, spread round-robin over tc4-1..4.
+consumers:
+  total_groups: 4               # VARY (consumer groups step)
+  group_prefix: bench-cg
+  fanout_mode: round-robin
+  worker_threads: 0             # VARY (worker threads step); 0 = process on the poll thread
+  stagger_ms: 200
+  round_robin:
+    topics: ["tc4-{1..4}"]
+
+producers:
+  # One Deployment per tc4 topic. The total rate is fixed, so changing
+  # producers_per_pod changes only the number of KafkaProducer clients.
+  - name: mp
+    layout: per-topic
+    topics: ["tc4-{1..4}"]
+    replicas: 1
+    producers_per_pod: 2        # VARY (producer count step)
+    total_mb_per_sec: 40        # uncompressed; 10 MB/s per topic
+  # Feeds the Kafka Streams input topic. Nothing consumes it until you add
+  # Kafka Streams apps with k8s/kstreams/gen-kstreams.sh.
+  - name: mp-streams
+    layout: per-topic
+    topics: [tc4-streams-1]
+    replicas: 1
+    producers_per_pod: 1
+    total_mb_per_sec: 1
+    resources: {cpu: 250m, memory: 512Mi}
+
+estimate:
+  topic_mb_per_sec:
+    "tc4-streams-*": 1
+    "tc4-[0-9]*": 10
+  partitions_per_topic:
+    "tc4-streams-*": 6
+    "tc4-[0-9]*": 24
+  warn_above_multiple: 4.5

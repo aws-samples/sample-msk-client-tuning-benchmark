@@ -66,7 +66,8 @@ ConfigMap `client-tuning-<p>`; see `../k8s/README.md`).
 |---|---|
 | `aws-tuned` | The blog's recommended settings: `linger.ms=25`, `batch.size=131072`, `compression.type=zstd`, `fetch.min.bytes=128`, `fetch.max.wait.ms=1000`, `max.poll.records=1000`, `CooperativeStickyAssignor`, OS-tuned socket buffers. |
 | `baseline` | A **template**. Replace its values with your production client settings so the baseline reproduces production. As shipped it contains the Apache Kafka 3.9 client defaults, written out explicitly. |
-| `<your-name>` | Bring your own: add `scripts/profiles/<your-name>.properties`. |
+| `aws-tuned-snappy`, `aws-tuned-lz4` | Identical to `aws-tuned` except `compression.type`, for a codec A/B (for example `../orchestration/run-ab.sh "$CLUSTER_ARN" aws-tuned aws-tuned-snappy`). |
+| `<your-name>` | Bring your own: add `scripts/profiles/<your-name>.properties`. Check it first with `python3 analysis/check_profile.py scripts/profiles/<your-name>.properties`. |
 
 On the EC2/SSM path the start scripts read only `scripts/client-tuning.properties`. To
 switch profile, copy one over it, then restart the load (the next `run-on-host.sh` call
@@ -83,6 +84,17 @@ authentication keys in a profile; they come from the IAM auth file. The start sc
 (`01`, `02`, `06`, `07`, `08`) refuse to start with an `ERROR:` if `client-tuning.properties`
 sets `security.protocol`, `sasl.mechanism`, `sasl.jaas.config` or
 `sasl.client.callback.handler.class` (the same rule the Amazon EKS image entrypoint applies).
+
+### One-command A/B (`../orchestration/run-ab.sh`)
+
+`orchestration/run-ab.sh <cluster-arn> <profile-a> <profile-b> [--mbps 100] [--topics 12] [--warmup-min 15]
+[--measure-min 30] [--brokers 3] [--dry-run]` runs both profiles back to back with identical load from your
+workstation. For each profile it copies the profile over `client-tuning.properties`, starts `01` and `02`, waits
+out the warm-up, measures a fixed window with `analysis/measure_cluster.py`, and stops the load. It then writes
+`analysis/compare.py --format markdown` to `results/ab-<timestamp>.md`, and restores the original
+`client-tuning.properties` at the end and on Ctrl-C. Both runs use the consumer group `bench-cg-0` on the first
+consumer host; load stops between runs and the warm-up absorbs any catch-up. Run with `--dry-run` first to print
+every command. Exit code 0 = OK, 1 = SUSPECT or a failed step, 2 = bad input.
 
 ### Override points
 

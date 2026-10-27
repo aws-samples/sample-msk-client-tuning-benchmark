@@ -112,6 +112,7 @@ export class ClientHostStack extends cdk.Stack {
           'kafka-cluster:WriteDataIdempotently',
           'kafka-cluster:AlterGroup',
           'kafka-cluster:DescribeGroup',
+          'kafka-cluster:DeleteGroup', // lets the harness remove stale benchmark groups between runs
           'kafka-cluster:DescribeTransactionalId',
           'kafka-cluster:AlterTransactionalId',
         ],

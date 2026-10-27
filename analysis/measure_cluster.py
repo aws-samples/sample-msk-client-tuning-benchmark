@@ -106,7 +106,9 @@ def main(argv):
     r = {"source": "measure_cluster", "label": a.label, "cluster": C, "start": S, "end": E, "brokers": len(ids)}
     for m, k in [("RequestHandlerAvgIdlePercent", "rh"), ("NetworkProcessorAvgIdlePercent", "np"),
                  ("CpuUser", "cpu_user"), ("CpuSystem", "cpu_sys"), ("ProduceTotalTimeMsMean", "produce_ms"),
-                 ("FetchConsumerTotalTimeMsMean", "fetch_ms"), ("VolumeQueueLength", "vql")]:
+                 ("FetchConsumerTotalTimeMsMean", "fetch_ms"), ("VolumeQueueLength", "vql"),
+                 ("ProduceThrottleTime", "produce_throttle_ms"), ("FetchThrottleTime", "fetch_throttle_ms"),
+                 ("RequestThrottleTime", "request_throttle_ms")]:
         pb = per_broker(m)
         vals = [v for v in pb.values() if v is not None]
         r[k + "_mean"] = st.mean(vals) if vals else None

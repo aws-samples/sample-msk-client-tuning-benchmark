@@ -9,6 +9,8 @@ enhanced monitoring on the cluster, which `../create-msk-standard-cluster.sh` en
 
 | Tool | What it does |
 |---|---|
+| `diagnose.py --cluster-arn <arn> [--hours 3 \| --start <t> --end <t>] [--format text\|markdown\|json]` | **Read-only health check of an existing cluster.** Enhanced monitoring level, `RequestHandlerAvgIdlePercent` / `NetworkProcessorAvgIdlePercent` (worst broker, request-bound hint), CPU against the 60% guidance, average message size, partitions per broker against the documented table, IAM connections and connection rate against the quotas, produce message conversions, and under-replicated partitions. Each finding is OK / WARN / ATTENTION with its source and a next step. Needs only `kafka:DescribeClusterV2`, `kafka:ListNodes`, and `cloudwatch:GetMetricData`. See [../docs/diagnose.md](../docs/diagnose.md). |
+| `check_profile.py <your-client.properties> [--role producer\|consumer\|both] [--format ...]` | **Offline check of a client config** against `aws-tuned`, key by key, with a reason per setting; flags codecs other than zstd, `linger.ms=0`, eager assignors, and auth keys; redacts secrets. See [../docs/check-profile.md](../docs/check-profile.md). |
 | `measure_cluster.py <cluster> <label> <start> <end> [broker_ids]` | The main measurement. For one window: per-broker means of 1-minute averages for `RequestHandlerAvgIdlePercent`, `NetworkProcessorAvgIdlePercent`, `CpuUser`, `CpuSystem`, `ProduceTotalTimeMsMean`, `FetchConsumerTotalTimeMsMean`, `VolumeQueueLength`, reported as the mean across brokers plus the min and max broker; summed `BytesInPerSec`, `BytesOutPerSec`, `MessagesInPerSec`; max partitions and IAM connections per broker; consumer lag via CloudWatch Metrics Insights. Rejects a window whose end is not after its start. Appends one JSON line, tagged `"source": "measure_cluster"`, to `snapshots.jsonl` (the file `compare.py` reads). |
 | `snap.py <label> <start> <end>` | Lighter snapshot at 5-minute resolution, including EBS write ops/bytes, connection counts, and lag for named consumer groups and topics (`--cluster`, `--num-brokers`, `--topic-prefix`, `--num-topics`, `--groups`). Appends to `snap-snapshots.jsonl` by default (`--out`), a separate file, because its records use different keys and are not comparable with `measure_cluster.py` records. |
 | `measure.sh <label> <start> [end]` | Console readout: per-broker table of idle % and CPU, peak IAM connections, a `snap.py` summary, and the most-lagging consumer groups. Uses `CLUSTER_NAME` and `NUM_BROKERS`. |
@@ -57,6 +59,7 @@ Then compare the two windows:
 
 ```bash
 ./compare.py baseline aws-tuned            # reads snapshots.jsonl next to this script
+./compare.py baseline aws-tuned --format markdown > ../results/ab.md   # shareable table, no ARNs or account IDs
 ```
 
 `compare.py` prints both windows side by side (mean across brokers and the worst broker; idle metrics as a
@@ -66,3 +69,10 @@ windows, and `RequestHandlerAvgIdlePercent` is present. Otherwise it reports **S
 reasons. It only considers `measure_cluster.py` records (`"source": "measure_cluster"`, or, in files written
 before that tag existed, records that have an `rh_mean` key), and exits 2 if the file is missing or unreadable,
 a line is not valid JSON, or a label has no matching record.
+
+## Start here if you already run Amazon MSK
+
+Run `diagnose.py` against your performance-test cluster while it carries its usual load, then `check_profile.py` on
+your client config, then the matching runbook in [../docs/test-cases/](../docs/test-cases/README.md). Exit codes
+for the analysis tools are consistent: 0 = nothing needs attention, 1 = findings to look at (or SUSPECT for
+`compare.py`), 2 = usage or input error.
