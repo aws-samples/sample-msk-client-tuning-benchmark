@@ -79,7 +79,10 @@ cp scripts/profiles/aws-tuned.properties scripts/client-tuning.properties   # ru
 
 Keep everything else (load, record size, topic/partition count, consumer count, broker
 size) identical between the two runs so only the client properties change. Do not put
-authentication keys in a profile; they come from the IAM auth file.
+authentication keys in a profile; they come from the IAM auth file. The start scripts
+(`01`, `02`, `06`, `07`, `08`) refuse to start with an `ERROR:` if `client-tuning.properties`
+sets `security.protocol`, `sasl.mechanism`, `sasl.jaas.config` or
+`sasl.client.callback.handler.class` (the same rule the Amazon EKS image entrypoint applies).
 
 ### Override points
 

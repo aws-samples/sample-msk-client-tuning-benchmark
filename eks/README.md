@@ -7,20 +7,41 @@ by the `infra/` stack `LoadBenchmarkNetworkStack`. The pods reach the Amazon Man
 
 Before you start, replace every placeholder in `cluster.yaml`:
 
+| Placeholder | Where | Replace with |
+|---|---|---|
+| `111122223333` | ARNs in the pod policy | your AWS account ID |
+| `us-east-1` | `metadata.region`, the subnet AZ keys (`us-east-1a` ...), the ARNs | your Region and its Availability Zones |
+| `REPLACE_ME_vpc-id` | `vpc.id` | `LoadBenchmarkNetworkStack` output `VpcId` |
+| `REPLACE_ME_subnet-a`, `-b`, `-c` | `vpc.subnets.private` and the node group `subnets` | `LoadBenchmarkNetworkStack` output `PrivateSubnetIds` (comma-separated, one per AZ; key each by its AZ) |
+| `REPLACE_ME_client-sg-id` | node group `securityGroups.attachIDs` | `LoadBenchmarkNetworkStack` output `ClientSecurityGroupId` |
+| `load-benchmark` | ARNs in the pod policy | your Amazon MSK cluster name, if different |
+
+Read the stack outputs (and the subnet AZs) with:
+
 ```bash
-grep -n 'REPLACE_ME\|111122223333' eks/cluster.yaml
+aws cloudformation describe-stacks --stack-name LoadBenchmarkNetworkStack --region us-east-1 --no-cli-pager \
+  --query 'Stacks[0].Outputs[].[OutputKey,OutputValue]' --output table
+aws ec2 describe-subnets --subnet-ids <PrivateSubnetIds, space-separated> --region us-east-1 --no-cli-pager \
+  --query 'Subnets[].[SubnetId,AvailabilityZone]' --output table
+```
+
+Then check that no placeholder is left. The command ignores comment lines and must print nothing:
+
+```bash
+grep -nE 'REPLACE_ME|111122223333' eks/cluster.yaml | grep -vE '^[0-9]+:[[:space:]]*#'
 ```
 
 | Item | Value |
 |---|---|
 | Account / Region | `111122223333` (example; use your AWS account ID) / `us-east-1` (example) |
 | Kubernetes | Use a Kubernetes version currently in Amazon EKS standard support, within +/-1 minor of your `kubectl` |
-| VPC | `REPLACE_ME_vpc-id` (existing; eksctl creates no VPC or NAT gateway) |
-| Private subnets | `REPLACE_ME_subnet-a`, `REPLACE_ME_subnet-b`, `REPLACE_ME_subnet-c` (one per Availability Zone) |
-| NAT | `REPLACE_ME_nat-id` (0.0.0.0/0 route in each private route table) |
-| Nodes | managed node group `kafka-clients`, c5n.2xlarge, AL2023, 50 GiB gp3, label `role=kafka-client`. Set `desiredCapacity`/`maxSize` to your workload |
-| MSK access | the client security group `REPLACE_ME_client-sg-id` is attached to the nodes. The MSK security group (`REPLACE_ME_msk-sg-id`) must allow port 9098 (IAM over TLS) from it |
-| Pod IAM | Amazon EKS Pod Identity, ServiceAccount `msk-bench/msk-bench-client`, AWS IAM role `msk-bench-eks-client-pod-role` |
+| VPC | existing VPC (eksctl creates no VPC or NAT gateway) |
+| Private subnets | one per Availability Zone |
+| NAT | prerequisite, not a placeholder: each private route table needs a 0.0.0.0/0 route to a NAT gateway (`LoadBenchmarkNetworkStack` creates one). Verify it in the pre-flight checklist |
+| Nodes | managed node group `kafka-clients`, c5n.2xlarge (x86_64), AL2023, 50 GiB gp3, label `role=kafka-client`. Set `desiredCapacity`/`maxSize` to your workload |
+| MSK access | the client security group is attached to the nodes. The MSK security group (`LoadBenchmarkNetworkStack` output `MskSecurityGroupId`) must allow port 9098 (IAM over TLS) from it |
+| Pod IAM | Amazon EKS Pod Identity. `cluster.yaml` creates the AWS IAM role `msk-bench-eks-client-pod-role`, the association, and the ServiceAccount `msk-bench/msk-bench-client`; nothing else is needed (`k8s/iam/` is only for bring-your-own clusters) |
+| Pod policy | MSK data plane on the cluster's `cluster/`, `topic/`, `group/`, `transactional-id/` ARNs; `kafka:GetBootstrapBrokers`, `DescribeCluster`, `DescribeClusterV2`, `ListNodes` on the cluster ARN; only `kafka:ListClustersV2` uses `"*"` |
 | Endpoint | public + private |
 | Tags | `project=msk-load-benchmark` on the cluster, node group, ASG (propagateASGTags), and the pod-identity role |
 
@@ -30,15 +51,17 @@ Run these read-only checks before creating the cluster.
 
 - [ ] **Credentials**: `aws sts get-caller-identity --no-cli-pager` shows the intended account.
       Creating the cluster requires permissions to create Amazon EKS, Amazon EC2, AWS IAM, and AWS CloudFormation resources.
-- [ ] **No placeholders left**: `grep -n 'REPLACE_ME' eks/cluster.yaml` returns nothing.
+- [ ] **No placeholders left**: the `grep` command above prints nothing.
 - [ ] **Client SG exists in this VPC**:
-      `aws ec2 describe-security-groups --group-ids REPLACE_ME_client-sg-id --region us-east-1 --no-cli-pager --query 'SecurityGroups[].VpcId'`
-      returns `REPLACE_ME_vpc-id`.
+      `aws ec2 describe-security-groups --group-ids <ClientSecurityGroupId> --region us-east-1 --no-cli-pager --query 'SecurityGroups[].VpcId'`
+      returns your `VpcId`.
 - [ ] **MSK SG allows the client SG**:
-      `aws ec2 describe-security-groups --group-ids REPLACE_ME_msk-sg-id --region us-east-1 --no-cli-pager --query 'SecurityGroups[].IpPermissions[].[FromPort,ToPort,UserIdGroupPairs[].GroupId]'`
-- [ ] **NAT exists and is routed**:
-      `aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=REPLACE_ME_subnet-a,REPLACE_ME_subnet-b,REPLACE_ME_subnet-c --region us-east-1 --no-cli-pager --query 'RouteTables[].Routes[?DestinationCidrBlock==`0.0.0.0/0`].NatGatewayId'`
-      `aws ec2 describe-nat-gateways --nat-gateway-ids REPLACE_ME_nat-id --region us-east-1 --no-cli-pager --query 'NatGateways[].State'` returns `available`.
+      `aws ec2 describe-security-groups --group-ids <MskSecurityGroupId> --region us-east-1 --no-cli-pager --query 'SecurityGroups[].IpPermissions[].[FromPort,ToPort,UserIdGroupPairs[].GroupId]'`
+      shows 9098 from the client SG.
+- [ ] **NAT exists and is routed** (prerequisite; nothing to replace in `cluster.yaml`):
+      `aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=<subnet-a>,<subnet-b>,<subnet-c> --region us-east-1 --no-cli-pager --query 'RouteTables[].Routes[?DestinationCidrBlock==`0.0.0.0/0`].NatGatewayId'`
+      returns a `nat-...` ID for every private route table. For each returned ID,
+      `aws ec2 describe-nat-gateways --nat-gateway-ids <nat-id> --region us-east-1 --no-cli-pager --query 'NatGateways[].State'` returns `available`.
 - [ ] **Subnet IP headroom**: VPC-CNI pre-allocates IPs per node (a c5n.2xlarge supports up to 58 pods).
       Check `AvailableIpAddressCount` on each subnet against the node and pod count you plan.
 - [ ] **Keep the network stack** while the cluster exists. Deleting the VPC stack would fail or orphan the EKS ENIs.
@@ -86,6 +109,7 @@ BOOTSTRAP=$(aws kafka get-bootstrap-brokers --region us-east-1 --no-cli-pager \
   --cluster-arn "$(aws kafka list-clusters-v2 --cluster-name-filter load-benchmark --region us-east-1 --no-cli-pager --query 'ClusterInfoList[0].ClusterArn' --output text)" \
   --query BootstrapBrokerStringSaslIam --output text)
 
+# Image built and pushed per eks/ecr.md (111122223333 = your AWS account ID)
 kubectl -n msk-bench run msk-smoke --rm -it --restart=Never \
   --image=111122223333.dkr.ecr.us-east-1.amazonaws.com/msk-bench-client:latest \
   --overrides='{"spec":{"serviceAccountName":"msk-bench-client","nodeSelector":{"role":"kafka-client"}}}' \

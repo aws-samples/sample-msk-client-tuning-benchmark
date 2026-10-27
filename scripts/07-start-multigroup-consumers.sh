@@ -44,6 +44,11 @@ mkdir -p "$RESULTS_DIR" "$(dirname "$PID_FILE")"
 command -v java >/dev/null 2>&1 || { echo "ERROR: 'java' not found on PATH (need JDK 17+)." >&2; exit 1; }
 [[ -f "$JAVA_SRC" ]] || { echo "ERROR: $JAVA_SRC not found (did run-on-host.sh sync scripts/ ?)." >&2; exit 1; }
 
+# shellcheck source=lib-msk-env.sh
+source "$SCRIPT_DIR/lib-msk-env.sh"
+# Refuse a tuning profile that sets authentication keys (see lib-msk-env.sh).
+msk_check_tuning_props "$TUNING_PROPS"
+
 # Separate merged file so a running 02/06 consumer's effective config is not overwritten.
 MERGED_PROPS=/opt/kafka/config/multigroup-effective.properties
 cat "$IAM_PROPS" > "$MERGED_PROPS"
@@ -52,8 +57,6 @@ if [[ -f "$TUNING_PROPS" ]]; then
   grep -Ev '^\s*#' "$TUNING_PROPS" | grep -Ev '^\s*$' >> "$MERGED_PROPS" || true
 fi
 
-# shellcheck source=lib-msk-env.sh
-source "$SCRIPT_DIR/lib-msk-env.sh"
 BROKERS=$(aws kafka get-bootstrap-brokers --cluster-arn "$CLUSTER_ARN" \
   "${MSK_ENDPOINT_ARGS[@]}" --query 'BootstrapBrokerStringSaslIam' --output text)
 if [[ -z "$BROKERS" || "$BROKERS" == "None" ]]; then

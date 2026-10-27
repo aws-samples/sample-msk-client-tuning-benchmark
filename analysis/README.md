@@ -9,8 +9,8 @@ enhanced monitoring on the cluster, which `../create-msk-standard-cluster.sh` en
 
 | Tool | What it does |
 |---|---|
-| `measure_cluster.py <cluster> <label> <start> <end> [broker_ids]` | The main measurement. For one window: per-broker means of 1-minute averages for `RequestHandlerAvgIdlePercent`, `NetworkProcessorAvgIdlePercent`, `CpuUser`, `CpuSystem`, `ProduceTotalTimeMsMean`, `FetchConsumerTotalTimeMsMean`, `VolumeQueueLength`, reported as the mean across brokers plus the min and max broker; summed `BytesInPerSec`, `BytesOutPerSec`, `MessagesInPerSec`; max partitions and IAM connections per broker; consumer lag via CloudWatch Metrics Insights. Appends one JSON line to `snapshots.jsonl`. |
-| `snap.py <label> <start> <end>` | Lighter snapshot at 5-minute resolution, including EBS write ops/bytes, connection counts, and lag for named consumer groups and topics (`--cluster`, `--num-brokers`, `--topic-prefix`, `--num-topics`, `--groups`). Also appends to `snapshots.jsonl`. |
+| `measure_cluster.py <cluster> <label> <start> <end> [broker_ids]` | The main measurement. For one window: per-broker means of 1-minute averages for `RequestHandlerAvgIdlePercent`, `NetworkProcessorAvgIdlePercent`, `CpuUser`, `CpuSystem`, `ProduceTotalTimeMsMean`, `FetchConsumerTotalTimeMsMean`, `VolumeQueueLength`, reported as the mean across brokers plus the min and max broker; summed `BytesInPerSec`, `BytesOutPerSec`, `MessagesInPerSec`; max partitions and IAM connections per broker; consumer lag via CloudWatch Metrics Insights. Rejects a window whose end is not after its start. Appends one JSON line, tagged `"source": "measure_cluster"`, to `snapshots.jsonl` (the file `compare.py` reads). |
+| `snap.py <label> <start> <end>` | Lighter snapshot at 5-minute resolution, including EBS write ops/bytes, connection counts, and lag for named consumer groups and topics (`--cluster`, `--num-brokers`, `--topic-prefix`, `--num-topics`, `--groups`). Appends to `snap-snapshots.jsonl` by default (`--out`), a separate file, because its records use different keys and are not comparable with `measure_cluster.py` records. |
 | `measure.sh <label> <start> [end]` | Console readout: per-broker table of idle % and CPU, peak IAM connections, a `snap.py` summary, and the most-lagging consumer groups. Uses `CLUSTER_NAME` and `NUM_BROKERS`. |
 | `latency_report.py <label> <log_glob>...` | Aggregates the `E2E_LATENCY` lines that the consumers print into a markdown table of p50/p90/p99/p99.9/max per group type (broadcast `bench-bcast-*` vs. other groups) and stage. |
 
@@ -63,4 +63,6 @@ Then compare the two windows:
 change in percentage points, other metrics as a percentage) and runs a quality gate. It reports **OK** (exit 0)
 only if `MessagesInPerSec` matches within 5% (`--max-rate-diff-pct`), `UnderReplicatedPartitions` was 0 in both
 windows, and `RequestHandlerAvgIdlePercent` is present. Otherwise it reports **SUSPECT** (exit 1) with the
-reasons.
+reasons. It only considers `measure_cluster.py` records (`"source": "measure_cluster"`, or, in files written
+before that tag existed, records that have an `rh_mean` key), and exits 2 if the file is missing or unreadable,
+a line is not valid JSON, or a label has no matching record.

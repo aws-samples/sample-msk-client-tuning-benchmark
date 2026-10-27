@@ -25,8 +25,9 @@ export interface ClientHostStackProps extends cdk.StackProps {
   /**
    * EC2 instance type for this host. Producer/consumer hosts default to
    * c5n.2xlarge (network-optimized, ~10 Gbps guaranteed, 8 vCPU for TLS + IAM
-   * signing) which comfortably drives ~180 MB/s from a single host. See the
-   * sizing table in the root README for other throughput targets.
+   * signing) which comfortably drives ~180 MB/s from a single host. For other
+   * throughput targets, override the size with CDK context (see "Configuration"
+   * in infra/README.md).
    */
   readonly instanceType: ec2.InstanceType;
   /**

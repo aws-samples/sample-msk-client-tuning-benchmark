@@ -48,6 +48,8 @@ aws ecr get-login-password --region "$AWS_REGION" \
 
 On an arm64 workstation (for example Apple silicon), Docker builds arm64 by default, so
 `--platform linux/amd64` is required. Without it, pods fail with `exec format error`.
+If you run AWS Graviton nodes instead of c5n, build with `--platform linux/arm64`
+(or `linux/amd64,linux/arm64` for a multi-arch image).
 
 ```bash
 docker buildx create --name msk-bench --use 2>/dev/null || docker buildx use msk-bench
@@ -66,6 +68,10 @@ docker buildx build --platform linux/amd64 \
   -t ${REGISTRY}/kstreams-emulator:latest \
   --push kstreams-emulator
 ```
+
+Pass the pushed URI to the generators: `python3 k8s/gen-workload.py SPEC --image ${REGISTRY}/msk-bench-client:${TAG}`
+and `IMAGE=${REGISTRY}/kstreams-emulator:${TAG} k8s/kstreams/gen-kstreams.sh ...`. Both print a
+`WARNING:` when the image still holds the example account `111122223333`.
 
 Verify:
 

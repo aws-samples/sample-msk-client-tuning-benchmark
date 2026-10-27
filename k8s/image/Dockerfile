@@ -8,7 +8,9 @@
 # Kafka 3.9.2 (kafka_2.13-3.9.2.tgz) client libs + aws-msk-iam-auth 2.2.0 "-all" jar.
 #
 # BUILD CONTEXT IS THE REPO ROOT (the Java sources live in scripts/):
-#   docker build -f k8s/image/Dockerfile -t msk-bench-client:local .
+#   docker buildx build --platform linux/amd64 -f k8s/image/Dockerfile -t $ECR/msk-bench-client:$TAG --push .
+# The eks/cluster.yaml node group is c5n (x86_64), hence linux/amd64; use
+# --platform linux/arm64 for Graviton nodes.
 # k8s/image/Dockerfile.dockerignore limits the context to the few files needed.
 #
 # JDK (not JRE) base on purpose: the tools run in single-file source mode
@@ -23,6 +25,10 @@ FROM public.ecr.aws/docker/library/eclipse-temurin:17-jdk@sha256:bd5fd56be7550e1
 
 ARG KAFKA_VERSION=3.9.2
 ARG SCALA_VERSION=2.13
+# Required pin for the Kafka distribution (kafka_2.13-3.9.2.tgz). Same value as
+# KAFKA_TGZ_SHA512 in infra/lib/client-host-stack.ts. Update the version and the
+# hash together.
+ARG KAFKA_SHA512=01186a5086b5ae753811ee71808a797baec1303d4e0d4b1c0acf42c489654a7b8988136f8469d0b66f0be439f8e3e9b816171ea0b0d7a36462b07aa2d3ef0023
 ARG MSK_IAM_AUTH_VERSION=2.2.0
 # Required pin for the IAM auth jar. Matches the .sha256 file published with the
 # GitHub release. If you change MSK_IAM_AUTH_VERSION, update this as well.
@@ -36,9 +42,10 @@ RUN apt-get update \
 
 WORKDIR /tmp/dl
 
-# Kafka distribution from archive.apache.org, verified against the published .sha512.
-# The .sha512 file is either "sha512sum" style or "gpg --print-md" style (uppercase,
-# space-grouped, wrapped). Strip the file name, keep hex digits only, lowercase.
+# Kafka distribution from archive.apache.org, verified against the pinned KAFKA_SHA512
+# (required) and, as an extra cross-check, the published .sha512. That file is either
+# "sha512sum" style or "gpg --print-md" style (uppercase, space-grouped, wrapped).
+# Strip the file name, keep hex digits only, lowercase.
 RUN set -eu; \
     tgz="kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz"; \
     base="https://archive.apache.org/dist/kafka/${KAFKA_VERSION}"; \
@@ -48,6 +55,10 @@ RUN set -eu; \
       || { echo "ERROR: download failed: ${base}/${tgz}.sha512" >&2; exit 1; }; \
     expected="$(tr -d '\r\n' < "${tgz}.sha512" | sed "s/${tgz}//" | tr -cd '0-9A-Fa-f' | tr 'A-F' 'a-f')"; \
     actual="$(sha512sum "${tgz}" | cut -d' ' -f1)"; \
+    pinned="$(printf '%s' "${KAFKA_SHA512}" | tr 'A-F' 'a-f')"; \
+    if [ -z "${pinned}" ]; then echo "ERROR: KAFKA_SHA512 is required" >&2; exit 1; fi; \
+    if [ "${pinned}" != "${actual}" ]; then \
+      echo "ERROR: sha512 mismatch for ${tgz} against pinned KAFKA_SHA512: expected=${pinned} actual=${actual}" >&2; exit 1; fi; \
     if [ "${#expected}" -ne 128 ]; then echo "ERROR: could not parse ${tgz}.sha512" >&2; cat "${tgz}.sha512" >&2; exit 1; fi; \
     if [ "${expected}" != "${actual}" ]; then \
       echo "ERROR: sha512 mismatch for ${tgz}: expected=${expected} actual=${actual}" >&2; exit 1; fi; \

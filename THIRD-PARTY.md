@@ -47,8 +47,8 @@ it contains.
 
 | Package | Version range | License |
 |---|---|---|
-| `aws-cdk-lib` | ^2.265.0 | Apache License 2.0 |
+| `aws-cdk-lib` | ^2.275.0 | Apache License 2.0 |
 | `constructs` | ^10.5.0 | Apache License 2.0 |
-| `aws-cdk` (CLI, dev) | 2.1138.0 | Apache License 2.0 |
+| `aws-cdk` (CLI, dev) | 2.1146.1 | Apache License 2.0 |
 | `typescript` (dev) | ~5.6.3 | Apache License 2.0 |
 | `jest`, `@types/jest`, `@types/node`, `@swc/core`, `@swc/jest`, `tsx` (dev) | see `infra/package.json` | MIT or Apache License 2.0 |

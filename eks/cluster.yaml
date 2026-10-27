@@ -6,8 +6,17 @@
 # infra/ LoadBenchmarkNetworkStack), reaching Amazon MSK cluster
 # "load-benchmark" over IAM auth (port 9098).
 #
-# Before use, replace every REPLACE_ME_* value and the example account ID
-# 111122223333 (grep -n 'REPLACE_ME\|111122223333' eks/cluster.yaml).
+# Before use, replace the placeholders (see eks/README.md):
+#   - account ID 111122223333 (in the ARNs) -> your AWS account ID
+#   - Region us-east-1 (metadata.region, the subnet AZ keys, the ARNs) -> your Region
+#   - REPLACE_ME_vpc-id, REPLACE_ME_subnet-*, REPLACE_ME_client-sg-id -> the
+#     LoadBenchmarkNetworkStack outputs VpcId, PrivateSubnetIds, ClientSecurityGroupId
+# Check (ignores comment lines; must print nothing):
+#   grep -nE 'REPLACE_ME|111122223333' eks/cluster.yaml | grep -vE '^[0-9]+:[[:space:]]*#'
+#
+# This file creates the EKS Pod Identity role msk-bench-eks-client-pod-role, its
+# association and the ServiceAccount msk-bench/msk-bench-client. With this file
+# nothing else is needed for pod IAM (k8s/iam/ is for bring-your-own clusters).
 #
 # Create:   eksctl create cluster -f eks/cluster.yaml
 # Validate: eksctl create cluster -f eks/cluster.yaml --dry-run
@@ -24,8 +33,9 @@ metadata:
     project: msk-load-benchmark
 
 # Existing VPC. The private subnets must route 0.0.0.0/0 through a NAT
-# gateway (REPLACE_ME_nat-id) so nodes can pull images and reach AWS APIs.
-# eksctl will NOT create a VPC.
+# gateway so nodes can pull images and reach AWS APIs (LoadBenchmarkNetworkStack
+# creates one; verify it with the eks/README.md pre-flight checklist).
+# eksctl will NOT create a VPC or a NAT gateway.
 vpc:
   id: REPLACE_ME_vpc-id
   subnets:
@@ -83,15 +93,21 @@ iam:
               - arn:aws:kafka:us-east-1:111122223333:group/load-benchmark/*
               # Kafka Streams exactly-once (EOS v2) needs transactional ids.
               - arn:aws:kafka:us-east-1:111122223333:transactional-id/load-benchmark/*
-          # Control plane reads (bootstrap discovery).
+          # Control plane reads (bootstrap discovery), scoped to the cluster.
           - Sid: MskControlPlaneRead
             Effect: Allow
             Action:
               - kafka:GetBootstrapBrokers
               - kafka:DescribeCluster
               - kafka:DescribeClusterV2
-              - kafka:ListClustersV2
               - kafka:ListNodes
+            Resource:
+              - arn:aws:kafka:us-east-1:111122223333:cluster/load-benchmark/*
+          # ListClustersV2 does not support resource-level permissions.
+          - Sid: MskListClusters
+            Effect: Allow
+            Action:
+              - kafka:ListClustersV2
             Resource: "*"
 
 addons:

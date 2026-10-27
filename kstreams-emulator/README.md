@@ -52,8 +52,8 @@ in the input topic:
 
 - `../scripts/MultiProducer.java` uses a pool of 4096 distinct payloads (`--payload-pool`),
   so you get at most 4096 keys.
-- `kafka-producer-perf-test` without `--payload-file` reuses a single random payload
-  (*to verify* for 3.9), so in `value` mode you would get one hot key. Use
+- `kafka-producer-perf-test` without `--payload-file` sends the same random payload for every
+  record, so in `value` mode you would get very few keys (possibly one hot key). Use
   `KEY_MODE=counter` with that producer.
 
 ## Build
@@ -185,7 +185,7 @@ producer_request_rate, txn_commit_time_ms_delta, txn_send_offsets_time_ms_delta
 | `process_rate` | `stream-thread-metrics:process-rate` |
 | `commit_rate` | `stream-thread-metrics:commit-rate` (Streams commits per second) |
 | `commit_latency_avg_ms` | `stream-thread-metrics:commit-latency-avg` (averaged over threads) |
-| `consumer_offset_commit_rate` | `consumer-coordinator-metrics:commit-rate` (OffsetCommit requests from the main consumer; expected near 0 under EOS, because offsets go through the transaction. *To verify* on a live run.) |
+| `consumer_offset_commit_rate` | `consumer-coordinator-metrics:commit-rate` (OffsetCommit requests from the main consumer; expected near 0 under EOS, because offsets go through the transaction. Check it on your own run.) |
 | `producer_record_send_rate` | `producer-metrics:record-send-rate` |
 | `producer_request_rate` | `producer-metrics:request-rate` (all producer requests, including transactional ones) |
 | `txn_commit_time_ms_delta` | EOS only: delta of `producer-metrics:txn-commit-time-ns-total`, in ms |
@@ -193,7 +193,8 @@ producer_request_rate, txn_commit_time_ms_delta, txn_send_offsets_time_ms_delta
 
 A metric that is missing (or is NaN, for example commit latency before the first commit) is
 printed as `na`. The reporter never crashes the app. All of these metric names were confirmed
-present in a 3.9.0 run with `DUMP_METRIC_NAMES=true`.
+present in a Kafka Streams 3.9.x run with `DUMP_METRIC_NAMES=true`; set it yourself to list the
+names your client version exposes.
 
 **stderr**: `INFO:` (config, topology, state transitions), `WARN:`, `ERROR:` (uncaught
 exceptions, ERROR state, close timeouts), and Kafka and AWS SDK logs at `LOG_LEVEL`.
@@ -211,7 +212,7 @@ exceptions, ERROR state, close timeouts), and Kafka and AWS SDK logs at `LOG_LEV
 | | `at_least_once` | `exactly_once_v2` |
 |---|---|---|
 | default `commit.interval.ms` | **30000** (verified) | **100** (verified) |
-| what a commit is | flush producer, then the main consumer sends **OffsetCommit** | flush, then `AddOffsetsToTxn` / `TxnOffsetCommit` / `EndTxn` to the transaction coordinator, which writes **transaction markers** to every partition the transaction touched (repartition, changelog, sink, `__consumer_offsets`) (protocol behaviour per KIP-98/KIP-447; *to verify* against broker request metrics) |
+| what a commit is | flush producer, then the main consumer sends **OffsetCommit** | flush, then `AddOffsetsToTxn` / `TxnOffsetCommit` / `EndTxn` to the transaction coordinator, which writes **transaction markers** to every partition the transaction touched (repartition, changelog, sink, `__consumer_offsets`) (protocol behaviour per KIP-98/KIP-447; not measured here, see the per-request-type rates below) |
 | producers | one per stream thread | one **transactional** producer per stream thread (`transactional.id=<app>-<processId>-<threadIdx>`, seen in the local run log) |
 | producer overrides set by Streams | `linger.ms=100` (verified) | `linger.ms=100`, `enable.idempotence=true`, `delivery.timeout.ms=2147483647`, `transaction.timeout.ms=10000` (all verified) |
 | main consumer | `max.poll.records=1000`, `enable.auto.commit=false`, `auto.offset.reset=earliest` (verified) | the same, plus `isolation.level=read_committed` (verified) |
@@ -222,7 +223,7 @@ The CLIENT_PROPS_FILE values (for example `linger.ms=25` in the `aws-tuned` prof
 default because user-supplied producer configs win. This was checked with
 `StreamsConfig#getProducerConfigs` and is visible in the startup `streams-prop` log.
 
-Other verified Kafka Streams 3.9.0 defaults:
+Other verified Kafka Streams 3.9.x defaults:
 
 - `statestore.cache.max.bytes=10485760`
 - `repartition.purge.interval.ms=30000`. Streams periodically calls DeleteRecords on the
@@ -258,7 +259,9 @@ threads mean more producers, connections and, under EOS, more transactions per c
 
 ## How the defaults were verified
 
-The values were read from the kafka-streams 3.9.0 classes inside the fat jar:
+The values were first read from the kafka-streams 3.9.0 classes inside the fat jar. The pom now pins
+Kafka 3.9.2; the commit-interval constants below were re-checked against the kafka-streams 3.9.2 jar
+and are unchanged. Re-run these checks if you change `kafka.version`:
 
 ```bash
 javap -cp target/kstreams-emulator.jar -constants -p org.apache.kafka.streams.StreamsConfig | grep COMMIT_INTERVAL

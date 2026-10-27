@@ -103,8 +103,10 @@ with `k8s/kstreams/gen-kstreams.sh` to measure what ALOS and EOS cost the broker
   Amazon S3, IAM, and (for the EKS path) Amazon EKS and Amazon ECR resources.
 - AWS CLI v2, Python 3.9 or later, and Bash. The analysis tools also need boto3
   (`python3 -m pip install -r analysis/requirements.txt`).
-- EC2 path: Node.js 18 or later and npm (the AWS CDK CLI is installed from `infra/package.json`).
-- EKS path: `eksctl`, `kubectl`, and Docker with `buildx` (for multi-architecture images).
+- Node.js 20 or later and npm (the AWS CDK CLI is installed from `infra/package.json`). Both harnesses use the
+  AWS CDK app for the VPC; the EC2 harness also uses it for the client hosts.
+- EKS path: `eksctl` (a version that supports the Amazon EKS version in `eks/cluster.yaml`), `kubectl`, and
+  Docker with `buildx`.
 - Kafka Streams emulator: JDK 17 (the Maven Wrapper downloads Maven).
 - Service quotas that allow the broker and client instance types you choose.
 
@@ -115,8 +117,8 @@ The commands below use `us-east-1` and the `default` AWS CLI profile. Replace th
 ```bash
 export AWS_REGION=us-east-1 AWS_PROFILE=default
 
-# 1. Deploy the VPC, producer host and consumer hosts (AWS CDK).
-cd infra && npm install && npx cdk deploy --all && cd ..
+# 1. Deploy the VPC, producer host and consumer hosts (AWS CDK). Bootstrap once per account and Region.
+cd infra && npm ci && npx cdk bootstrap && npx cdk deploy --all && cd ..
 
 # 2. Create the Amazon MSK Standard test cluster and its topics (20-30 minutes).
 ./create-msk-standard-cluster.sh            # see the script header for arguments
@@ -125,7 +127,8 @@ CLUSTER_ARN=<cluster ARN printed by the script>
 # 3. Publish the Amazon CloudWatch dashboard.
 ./scripts/15-put-dashboard.sh load-benchmark "$AWS_REGION" 3
 
-# 4. Choose the client profile for this run (see "Bring your own client config").
+# 4. Choose the client profile for this run (see "Bring your own client config"). This overwrites the tracked
+#    active file, so `git status` shows it as modified; that's expected.
 cp scripts/profiles/baseline.properties scripts/client-tuning.properties
 
 # 5. Start producers on the producer host and a consumer group on each consumer host.
@@ -147,27 +150,46 @@ for AWS CDK context options (instance types, consumer host count, VPC CIDR).
 
 ## Quick start: Amazon EKS harness
 
+The EKS harness reuses the VPC and the Amazon MSK test cluster from the EC2 harness, and it runs the same Java
+clients as pods. `eks/cluster.yaml` creates the EKS Pod Identity role, its association, and the
+`msk-bench/msk-bench-client` ServiceAccount, so you don't create an IAM role yourself on this path.
+
 ```bash
-# 1. Fill the REPLACE_ME values in eks/cluster.yaml (VPC, subnets, security group), then create the cluster.
+# 0. Run steps 1 and 2 of the EC2 quick start first. Step 1 creates the VPC (LoadBenchmarkNetworkStack); step 2
+#    creates the MSK cluster and its topics (the topics are created from the producer host). The pods don't
+#    create topics.
+
+# 1. Fill in eks/cluster.yaml. Replace every REPLACE_ME value with the LoadBenchmarkNetworkStack outputs
+#    (VpcId, PrivateSubnetIds, ClientSecurityGroupId), and replace the account ID 111122223333 and the Region
+#    us-east-1 (region, availability zones, and the pod policy ARNs) with yours. Lower desiredCapacity if you
+#    only run small workloads. Then create the cluster.
+aws cloudformation describe-stacks --stack-name LoadBenchmarkNetworkStack --query 'Stacks[0].Outputs'
+grep -nE '111122223333|REPLACE_ME|us-east-1' eks/cluster.yaml | grep -v '^ *[0-9]*: *#'
 eksctl create cluster -f eks/cluster.yaml
 
-# 2. Build and push the client image to Amazon ECR (see k8s/README.md and eks/ecr.md).
-docker build -f k8s/image/Dockerfile -t msk-bench-client:local .
+# 2. Build the client image for the node architecture (c5n is x86_64) and push it to Amazon ECR
+#    (create the repository first; see eks/ecr.md).
+ECR=<account>.dkr.ecr.<region>.amazonaws.com; TAG=$(git rev-parse --short HEAD)
+docker buildx build --platform linux/amd64 -f k8s/image/Dockerfile -t $ECR/msk-bench-client:$TAG --push .
 
-# 3. Create the pod IAM role from k8s/iam/ and put the IAM bootstrap string in
-#    k8s/base/20-configmap-msk-bootstrap.yaml (see k8s/README.md).
+# 3. Put the IAM bootstrap string of the MSK cluster into k8s/base/20-configmap-msk-bootstrap.yaml.
+aws kafka get-bootstrap-brokers --cluster-arn "$CLUSTER_ARN" --query BootstrapBrokerStringSaslIam --output text
 
 # 4. Apply the namespace, ServiceAccount and ConfigMaps.
 kubectl apply -f k8s/base
 
-# 5. Generate and apply a workload with the baseline profile, then with aws-tuned.
-python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --summary-only
-python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --tuning baseline > /tmp/baseline.yaml
-python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --tuning aws-tuned > /tmp/aws-tuned.yaml
+# 5. Generate and apply a workload with the baseline profile, then with aws-tuned. Always pass your image.
+IMG=$ECR/msk-bench-client:$TAG
+python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --image "$IMG" --summary-only
+python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --image "$IMG" --tuning baseline  > /tmp/baseline.yaml
+python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --image "$IMG" --tuning aws-tuned > /tmp/aws-tuned.yaml
 kubectl apply -f /tmp/baseline.yaml
 # ... measure the steady-state window ...
 kubectl apply -f /tmp/aws-tuned.yaml     # rolls every Deployment onto the new profile
 ```
+
+If you bring your own Amazon EKS cluster instead of `eks/cluster.yaml`, create the pod role from `k8s/iam/`
+(EKS Pod Identity or IRSA) as described in [k8s/README.md](k8s/README.md).
 
 See [eks/README.md](eks/README.md) and [k8s/README.md](k8s/README.md) for details, including fan-out modes,
 scaling, and the container environment contract.
@@ -211,8 +233,9 @@ A profile is a Kafka client properties file. Any profile name `<p>` maps to:
 To add your own profile:
 
 1. Copy `scripts/profiles/baseline.properties` to `scripts/profiles/<p>.properties` and set your values.
-   Do not set `security.protocol`, `sasl.*`, or other authentication settings; the harness adds the IAM
-   authentication properties itself.
+   Do not set `security.protocol`, `sasl.mechanism`, `sasl.jaas.config`, or
+   `sasl.client.callback.handler.class`; the harness adds the IAM authentication properties itself, and both
+   harnesses refuse to start a client if the profile overrides them.
 2. For the EKS harness, create the matching ConfigMap:
 
    ```bash
@@ -252,7 +275,14 @@ To add your own profile:
 python3 analysis/measure_cluster.py load-benchmark baseline  2026-01-01T10:00:00Z 2026-01-01T10:30:00Z
 python3 analysis/measure_cluster.py load-benchmark aws-tuned 2026-01-01T12:00:00Z 2026-01-01T12:30:00Z
 python3 analysis/compare.py baseline aws-tuned        # exit 0 = OK, exit 1 = SUSPECT
-python3 analysis/latency_report.py "aws-tuned" '/tmp/run-aws-tuned*.log'   # optional end-to-end latency
+```
+
+End-to-end latency is optional and EKS only: set `consumers.latency_report_sec` (for example `30`) in the workload
+spec, collect the consumer logs for the window, and summarize them:
+
+```bash
+kubectl -n msk-bench logs -l role=consumer --prefix --tail=-1 --since=30m > /tmp/run-aws-tuned.log
+python3 analysis/latency_report.py "aws-tuned" '/tmp/run-aws-tuned*.log'
 ```
 
 ## Benchmark integrity rules
@@ -319,8 +349,11 @@ kubectl delete namespace msk-bench --wait
 # 2. Delete the Amazon EKS cluster (if you created one).
 eksctl delete cluster -f eks/cluster.yaml --wait
 
-# 3. Delete the Amazon MSK cluster, then its configuration once the cluster is gone.
+# 3. Delete the Amazon MSK cluster, wait until it is gone, then delete its configuration
+#    (create-msk-standard-cluster.sh prints both ARNs).
 aws kafka delete-cluster --cluster-arn "$CLUSTER_ARN"
+while aws kafka describe-cluster-v2 --cluster-arn "$CLUSTER_ARN" >/dev/null 2>&1; do sleep 30; done
+aws kafka delete-configuration --arn "$CONFIG_ARN"
 
 # 4. Destroy the AWS CDK stacks (VPC, hosts, S3 staging bucket).
 cd infra && npx cdk destroy --all

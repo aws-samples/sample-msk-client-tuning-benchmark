@@ -25,14 +25,22 @@ gp3 root volume and Kafka data-plane AWS IAM permissions scoped to the cluster *
 - Instances require IMDSv2 and use encrypted EBS root volumes.
 - The S3 bucket blocks all public access, enforces TLS (`aws:SecureTransport`), uses SSE-S3
   encryption, and disables ACLs (bucket owner enforced).
-- AWS IAM: data-plane (`kafka-cluster:*`) and control-plane (`kafka:DescribeCluster*`,
-  `GetBootstrapBrokers`, `ListNodes`) actions are scoped to the benchmark cluster ARN pattern.
-  Only the list/metric reads that do not support resource-level permissions
-  (`kafka:List*`, `cloudwatch:GetMetricData`, `cloudwatch:GetMetricStatistics`) use `*`.
+- AWS IAM: data-plane (`kafka-cluster:*`) and control-plane (`kafka:DescribeCluster`,
+  `kafka:DescribeClusterV2`, `kafka:GetBootstrapBrokers`, `kafka:ListNodes`) actions are scoped to
+  the benchmark cluster ARN pattern. `kafka:DescribeConfiguration` and
+  `kafka:DescribeConfigurationRevision` (to read the cluster's MSK configuration) are scoped to
+  `arn:<partition>:kafka:<region>:<account>:configuration/*`, because the configuration is created
+  outside CDK. Only the list/metric reads that do not support resource-level permissions
+  (`kafka:ListClusters`, `kafka:ListClustersV2`, `kafka:ListConfigurations`,
+  `cloudwatch:GetMetricData`, `cloudwatch:GetMetricStatistics`) use `*`.
 - The bucket and its objects are deleted with the stack (`autoDeleteObjects`). This is a
   short-lived benchmark environment; change the removal policy if you want to keep results.
 
 ## Deploy
+
+Prerequisites: Node.js 20 or later, and AWS credentials for the target account. Run the commands
+from this `infra/` directory. Use `npm ci` (not `npm install`) so that the exact versions in
+`package-lock.json` are installed; the AWS CDK CLI is a pinned dev dependency, so `npx cdk` uses it.
 
 ```bash
 npm ci
@@ -74,7 +82,9 @@ Re-deploy with a higher `consumerCount`; existing consumer stacks are untouched 
 ## Stack outputs consumed by the scripts
 
 `PrivateSubnetIds`, `MskSecurityGroupId` (by the create-cluster script);
-`ScriptsBucketName`, `HostInstanceId` (by `orchestration/run-on-host.sh`).
+`ScriptsBucketName`, `HostInstanceId` (by `orchestration/run-on-host.sh`);
+`VpcId`, `PrivateSubnetIds`, `ClientSecurityGroupId` (the values to put into `../eks/cluster.yaml`
+if you run the clients on Amazon EKS in this VPC).
 
 ## Tests
 

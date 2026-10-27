@@ -30,6 +30,11 @@ TUNING_PROPS="$SCRIPT_DIR/client-tuning.properties"
 RESULTS_DIR=/opt/load-benchmark/results
 mkdir -p "$RESULTS_DIR"
 
+# shellcheck source=lib-msk-env.sh
+source "$SCRIPT_DIR/lib-msk-env.sh"
+# Refuse a tuning profile that sets authentication keys (see lib-msk-env.sh).
+msk_check_tuning_props "$TUNING_PROPS"
+
 # Merge mandatory IAM auth with tunable overrides, then append any per-run fetch
 # knobs (these win, since they are appended last).
 MERGED_PROPS=/opt/kafka/config/consumer-effective.properties
@@ -41,8 +46,6 @@ fi
 [[ -n "$FETCH_MIN_BYTES" ]] && echo "fetch.min.bytes=$FETCH_MIN_BYTES" >> "$MERGED_PROPS"
 [[ -n "$FETCH_MAX_WAIT_MS" ]] && echo "fetch.max.wait.ms=$FETCH_MAX_WAIT_MS" >> "$MERGED_PROPS"
 
-# shellcheck source=lib-msk-env.sh
-source "$SCRIPT_DIR/lib-msk-env.sh"
 
 echo "Fetching bootstrap brokers for $CLUSTER_ARN..."
 BROKERS=$(aws kafka get-bootstrap-brokers --cluster-arn "$CLUSTER_ARN" \

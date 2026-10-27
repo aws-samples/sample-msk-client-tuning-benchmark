@@ -416,6 +416,19 @@ def cpu_quantity(q, where):
 _BUF_RE = re.compile(r"^\s*buffer\.memory\s*[=:]\s*([0-9]+)\s*$", re.M)
 
 
+def base_has_configmap(script_dir, profile):
+    """True if a manifest in k8s/base defines ConfigMap client-tuning-<profile>."""
+    base = os.path.join(script_dir, "base")
+    if not os.path.isdir(base):
+        return False
+    for fn in sorted(os.listdir(base)):
+        if fn.endswith((".yaml", ".yml")):
+            with open(os.path.join(base, fn), encoding="utf-8") as f:
+                if re.search(r"^\s*name:\s*client-tuning-%s\s*$" % re.escape(profile), f.read(), re.M):
+                    return True
+    return False
+
+
 def tuning_buffer_memory(script_dir, profile):
     """(buffer.memory, source) for a profile, or (None, None) if the profile is not in the repo.
 
@@ -720,7 +733,15 @@ def main():
         if not isinstance(spec, dict):
             raise SpecError("top level of the spec must be a mapping")
         workload = label_value(dns_name(get(spec, "name", typ=str, required=True), "name"), "name")
-        tuning = args.tuning or get(spec, "tuning", default="aws-tuned", typ=str)
+        if args.tuning is not None:
+            tuning = args.tuning
+            if not tuning.strip():
+                raise SpecError("--tuning must name a profile (for example baseline or aws-tuned), got ''")
+        else:
+            tuning = get(spec, "tuning", default="aws-tuned", typ=str)
+            if not tuning.strip():
+                raise SpecError("spec key 'tuning' must name a profile (for example baseline or aws-tuned), "
+                                "got ''")
         # The profile name becomes part of a ConfigMap name and a label-safe annotation.
         if dns_name(tuning, "tuning") != tuning or len("client-tuning-" + tuning) > 253:
             raise SpecError("tuning profile %r must be lowercase [a-z0-9-] (it names ConfigMap "
@@ -895,10 +916,18 @@ def main():
     if unproduced:
         warnings.append("consumer topics with no producer in this spec: %s" % ", ".join(unproduced))
     buf, buf_src = tuning_buffer_memory(script_dir, tuning)
-    if buf is None:
-        lines.append("NOTE: profile '%s' is not in k8s/base or scripts/profiles; create ConfigMap "
-                     "client-tuning-%s in namespace %s before applying (see k8s/README.md)"
-                     % (tuning, tuning, ctx["namespace"]))
+    if not base_has_configmap(script_dir, tuning):
+        prof_rel = "scripts/profiles/%s.properties" % tuning
+        src = prof_rel if os.path.isfile(os.path.join(os.path.dirname(script_dir), prof_rel)) \
+            else "<your %s.properties>" % tuning
+        lines.append("NOTE: k8s/base has no ConfigMap client-tuning-%s; create it in namespace %s before "
+                     "applying, or pods stay in ContainerCreating: kubectl -n %s create configmap "
+                     "client-tuning-%s --from-file=client-tuning.properties=%s (see k8s/README.md)"
+                     % (tuning, ctx["namespace"], ctx["namespace"], tuning, src))
+    if "111122223333" in ctx["image"]:
+        warnings.append("image %s contains the placeholder account 111122223333; build and push your "
+                        "image (k8s/README.md, section 1) and pass --image <uri> or set image: in the spec"
+                        % ctx["image"])
     for p in plans:
         res = p["resources"] or res_prod
         try:

@@ -30,6 +30,11 @@ TUNING_PROPS="$SCRIPT_DIR/client-tuning.properties"
 RESULTS_DIR=/opt/load-benchmark/results
 mkdir -p "$RESULTS_DIR"
 
+# shellcheck source=lib-msk-env.sh
+source "$SCRIPT_DIR/lib-msk-env.sh"
+# Refuse a tuning profile that sets authentication keys (see lib-msk-env.sh).
+msk_check_tuning_props "$TUNING_PROPS"
+
 # Merge the mandatory IAM auth props with the tunable overrides into one file
 # the perf tool can consume. Tuning props come last so they win on any overlap.
 MERGED_PROPS=/opt/kafka/config/producer-effective.properties
@@ -39,8 +44,6 @@ if [[ -f "$TUNING_PROPS" ]]; then
   grep -Ev '^\s*#' "$TUNING_PROPS" | grep -Ev '^\s*$' >> "$MERGED_PROPS" || true
 fi
 
-# shellcheck source=lib-msk-env.sh
-source "$SCRIPT_DIR/lib-msk-env.sh"
 
 # Convert the aggregate MB/s target into records/sec per topic.
 #   rec/s per topic = target_MB/s * 1048576 / record_size / num_topics

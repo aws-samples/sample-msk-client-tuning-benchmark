@@ -39,8 +39,9 @@ const CLUSTER_NAME = app.node.tryGetContext('clusterName') ?? 'load-benchmark';
 const CONSUMER_COUNT = Number(app.node.tryGetContext('consumerCount') ?? 1);
 
 // Instance types. c5n is network-optimized with GUARANTEED (not burst)
-// bandwidth, which is what a multi-hour high-throughput soak needs. See the
-// sizing table in the root README to pick sizes for other targets.
+// bandwidth, which is what a multi-hour high-throughput soak needs. To use
+// other sizes, override them with CDK context (see "Configuration" in
+// infra/README.md):
 //   -c producerInstanceType=c5n.4xlarge -c consumerInstanceType=c5n.4xlarge
 const PRODUCER_INSTANCE_TYPE = app.node.tryGetContext('producerInstanceType') ?? 'c5n.2xlarge';
 const CONSUMER_INSTANCE_TYPE = app.node.tryGetContext('consumerInstanceType') ?? 'c5n.2xlarge';

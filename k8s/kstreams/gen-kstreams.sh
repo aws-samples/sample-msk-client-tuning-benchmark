@@ -10,11 +10,13 @@
 # repartition and one changelog topic with the same partition count as the input.
 # commit.interval.ms is left at the Kafka default (ALOS 30000, EOS 100).
 # tuning-profile (default aws-tuned) selects ConfigMap client-tuning-<profile>.
-# Image: set IMAGE, or AWS_ACCOUNT_ID / AWS_REGION to build the default ECR URI.
+# Image: set IMAGE, or AWS_ACCOUNT_ID / AWS_REGION to build the default ECR URI. A WARNING is
+# printed on stderr while the image still holds the placeholder account 111122223333.
 set -euo pipefail
 MODE=${1:?alos|eos}; N=${2:?num-apps}; TOPIC=${3:-bcast-1}; TUNING=${4:-aws-tuned}
 [[ "$TUNING" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || { echo "bad tuning profile name: $TUNING" >&2; exit 1; }
 IMAGE=${IMAGE:-${AWS_ACCOUNT_ID:-111122223333}.dkr.ecr.${AWS_REGION:-us-east-1}.amazonaws.com/kstreams-emulator:latest}
+[[ "$IMAGE" == *111122223333* ]] && echo "WARNING: image $IMAGE contains the placeholder account 111122223333; set IMAGE=<your ECR URI> (or AWS_ACCOUNT_ID / AWS_REGION), see eks/ecr.md" >&2
 case $MODE in alos) PG=at_least_once;; eos) PG=exactly_once_v2;; *) echo "bad mode" >&2; exit 1;; esac
 TS=$(date -u +%m%d%H%M)
 for i in $(seq 0 $((N-1))); do

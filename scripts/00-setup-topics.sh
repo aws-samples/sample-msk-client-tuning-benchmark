@@ -9,7 +9,7 @@
 # Usage: ./00-setup-topics.sh <cluster-arn> [topic-prefix] [num-topics] [partitions] [retention-ms] [replication-factor] [min-insync-replicas]
 set -uo pipefail
 
-CLUSTER_ARN="${1:?Usage: $0 <cluster-arn> [topic-prefix] [num-topics] [partitions] [retention-ms]}"
+CLUSTER_ARN="${1:?Usage: $0 <cluster-arn> [topic-prefix] [num-topics] [partitions] [retention-ms] [replication-factor] [min-insync-replicas]}"
 PREFIX="${2:-load-bench}"
 NUM_TOPICS="${3:-12}"
 PARTITIONS="${4:-24}"

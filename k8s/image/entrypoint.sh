@@ -7,8 +7,9 @@
 #      mandatory MSK IAM auth props  (same 4 lines as /opt/kafka/config/client-iam.properties
 #                                     on the EC2 hosts, infra/lib/client-host-stack.ts)
 #    + client tuning                 (ConfigMap-mounted file, comments/blank lines stripped;
-#                                     comes after the IAM block so it wins on overlap,
-#                                     exactly like scripts/0[1-8]-*.sh)
+#                                     it must NOT set security.protocol, sasl.mechanism,
+#                                     sasl.jaas.config or sasl.client.callback.handler.class,
+#                                     same rule as scripts/0[1-8]-*.sh)
 #    + EXTRA_PROPS                   (optional, newline-separated k=v, appended last)
 # 2. execs `java -cp '/opt/kafka/libs/*' <Tool>.java <args>` built from env vars.
 #
@@ -79,10 +80,10 @@ require TOPICS
 require_int REPORT_INTERVAL_MS
 
 # Refuse to start on an unfilled placeholder. The shipped ConfigMap value is
-# REPLACE_ME_BOOTSTRAP_SERVERS (k8s/base/20-configmap-msk-bootstrap.yaml); the
-# other patterns catch hand-written placeholders.
+# REPLACE_ME_BOOTSTRAP_SERVERS (k8s/base/20-configmap-msk-bootstrap.yaml);
+# PLACEHOLDER catches hand-written ones. Nothing else is treated as a placeholder.
 case "$BOOTSTRAP_SERVERS" in
-  *REPLACE_ME*|*REPLACE*|*PLACEHOLDER*|*example*)
+  *REPLACE_ME*|*PLACEHOLDER*)
     die "BOOTSTRAP_SERVERS still holds the placeholder ('$BOOTSTRAP_SERVERS'); fill ConfigMap msk-bootstrap (see k8s/README.md)";;
 esac
 [[ "$BOOTSTRAP_SERVERS" == *:9098* ]] \
@@ -94,6 +95,16 @@ ls "$KAFKA_HOME"/libs/aws-msk-iam-auth-*.jar >/dev/null 2>&1 \
 [[ -r "$TUNING_FILE" ]] \
   || die "tuning file not readable: $TUNING_FILE (is ConfigMap client-tuning-<profile> mounted?)"
 [[ -d "$WORK_DIR" && -w "$WORK_DIR" ]] || die "WORK_DIR $WORK_DIR is not a writable directory"
+
+# The IAM auth block is fixed. The tuning file and EXTRA_PROPS must not set any
+# of its keys (same rule as the EC2 host scripts, scripts/lib-msk-env.sh).
+IAM_KEYS_RE='^[[:space:]]*(security\.protocol|sasl\.mechanism|sasl\.jaas\.config|sasl\.client\.callback\.handler\.class)[[:space:]]*[=:]'
+if bad="$(grep -nE "$IAM_KEYS_RE" "$TUNING_FILE")"; then
+  die "tuning file $TUNING_FILE sets MSK IAM auth keys (security.protocol, sasl.mechanism, sasl.jaas.config, sasl.client.callback.handler.class are fixed by the image); remove them: ${bad//$'\n'/; }"
+fi
+if [[ -n "${EXTRA_PROPS:-}" ]] && bad="$(printf '%s\n' "$EXTRA_PROPS" | grep -nE "$IAM_KEYS_RE")"; then
+  die "EXTRA_PROPS sets MSK IAM auth keys (security.protocol, sasl.mechanism, sasl.jaas.config, sasl.client.callback.handler.class are fixed by the image); remove them: ${bad//$'\n'/; }"
+fi
 
 EFFECTIVE_PROPS="$WORK_DIR/client-effective.properties"
 {
@@ -112,7 +123,7 @@ EFFECTIVE_PROPS="$WORK_DIR/client-effective.properties"
   fi
 } > "$EFFECTIVE_PROPS" || die "could not write $EFFECTIVE_PROPS"
 
-# A tuning file must not silently drop IAM auth.
+# Defense in depth: the effective file must still end up with IAM auth.
 for key in security.protocol sasl.mechanism; do
   last="$(grep -E "^[[:space:]]*${key//./\\.}[[:space:]]*[=:]" "$EFFECTIVE_PROPS" | tail -n1 | sed 's/^[^=:]*[=:][[:space:]]*//')"
   case "$key=$last" in

@@ -33,7 +33,7 @@ public GitHub issue.
 
 - An AWS account used only for testing, and a principal that can create the resources above. The AWS CDK app
   and eksctl create IAM roles, so the deploying principal needs IAM write permissions.
-- Tools: AWS CLI v2, Node.js 18 or later (AWS CDK), Python 3.9 or later with boto3 for the analysis tools
+- Tools: AWS CLI v2, Node.js 20 or later (AWS CDK), Python 3.9 or later with boto3 for the analysis tools
   (`analysis/requirements.txt`), and, for the EKS harness, eksctl, kubectl, and Docker.
 
 The roles that the sample creates are scoped as follows:
@@ -61,6 +61,8 @@ The roles that the sample creates are scoped as follows:
 - Container base images come from Amazon ECR Public and are pinned by digest.
 - Client pods run as a non-root user with a read-only root filesystem, `allowPrivilegeEscalation: false`, and
   all Linux capabilities dropped.
+- Client profiles cannot override authentication: the EC2 scripts and the container entrypoint refuse to start
+  a client whose profile sets `security.protocol` or `sasl.*` settings.
 - The analysis tools call Amazon CloudWatch through the AWS SDK for Python (boto3), not through a shell, and
   validate every argument before use.
 

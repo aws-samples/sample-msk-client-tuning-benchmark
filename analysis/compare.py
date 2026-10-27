@@ -6,8 +6,9 @@
 Usage:
   compare.py <baseline-label> <candidate-label> [--file snapshots.jsonl] [--max-rate-diff-pct 5]
 
-Reads the most recent record for each label from the JSON-lines file written by measure_cluster.py,
-prints a side-by-side table (mean across brokers and the worst broker), and runs quality checks:
+Reads the most recent record for each label from the JSON-lines file written by measure_cluster.py
+(only records with "source": "measure_cluster", or, in older files without that tag, records that
+have an rh_mean key; snap.py records are ignored), prints a side-by-side table (mean across brokers and the worst broker), and runs quality checks:
 
   * Message rate: MessagesInPerSec must match within --max-rate-diff-pct. Compression changes on-wire
     bytes, so runs are compared at equal message rate, not equal bytes.
@@ -15,7 +16,8 @@ prints a side-by-side table (mean across brokers and the worst broker), and runs
   * Completeness: the primary metric (RequestHandlerAvgIdlePercent) must be present in both windows.
 
 Exit code 0 means the comparison passed every check (OK). Exit code 1 means at least one check failed
-(SUSPECT): fix the run instead of explaining the numbers. Exit code 2 means a usage or input error.
+(SUSPECT): fix the run instead of explaining the numbers. Exit code 2 means a usage or input error
+(missing or unreadable file, invalid JSON, label not found).
 """
 import argparse
 import json
@@ -39,16 +41,36 @@ TOTALS = [
 ]
 
 
+class InputError(Exception):
+    """The snapshots file cannot be read or contains invalid JSON."""
+
+
+def is_measure_record(rec):
+    # measure_cluster.py tags its records with "source"; older files without the tag are recognised
+    # by the rh_mean key, which only measure_cluster.py writes (snap.py records are skipped).
+    if not isinstance(rec, dict):
+        return False
+    if "source" in rec:
+        return rec["source"] == "measure_cluster"
+    return "rh_mean" in rec
+
+
 def load(path, label):
     found = None
-    with open(path) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rec = json.loads(line)
-            if rec.get("label") == label:
-                found = rec
+    try:
+        with open(path) as fh:
+            for lineno, line in enumerate(fh, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError as e:
+                    raise InputError("%s line %d is not valid JSON (%s)" % (path, lineno, e.msg))
+                if is_measure_record(rec) and rec.get("label") == label:
+                    found = rec
+    except (OSError, UnicodeDecodeError) as e:
+        raise InputError("cannot read %s (%s)" % (path, e))
     return found
 
 
@@ -62,8 +84,6 @@ def delta(a, b, points=False):
     if points:
         # *IdlePercent metrics are fractions (1.0 = fully idle); report the change in percentage points.
         return "%+.1f pts" % ((b - a) * 100.0)
-    if a is None or b is None:
-        return "-"
     if a == 0:
         return "%+.3f" % (b - a)
     return "%+.1f%%" % ((b - a) / abs(a) * 100.0)
@@ -80,10 +100,14 @@ def main(argv):
     if not os.path.exists(a.file):
         print("ERROR: %s not found (run measure_cluster.py first)" % a.file, file=sys.stderr)
         return 2
-    base, cand = load(a.file, a.baseline), load(a.file, a.candidate)
+    try:
+        base, cand = load(a.file, a.baseline), load(a.file, a.candidate)
+    except InputError as e:
+        print("ERROR: %s" % e, file=sys.stderr)
+        return 2
     for name, rec in ((a.baseline, base), (a.candidate, cand)):
         if rec is None:
-            print("ERROR: no record with label %r in %s" % (name, a.file), file=sys.stderr)
+            print("ERROR: no measure_cluster.py record with label %r in %s" % (name, a.file), file=sys.stderr)
             return 2
 
     w = 44

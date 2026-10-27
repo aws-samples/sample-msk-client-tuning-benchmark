@@ -12,7 +12,9 @@ Defaults come from env (CLUSTER_NAME=load-benchmark, NUM_BROKERS=3, TOPIC_PREFIX
 NUM_TOPICS=12, GROUPS=group-0). Region/profile default to the AWS CLI's own resolution.
 Throughput (bytes/messages) is summed across brokers; idle %, CPU and latency are the mean
 across brokers. Prints the record and appends it as one JSON line to --out
-(default: snapshots.jsonl next to this script).
+(default: snap-snapshots.jsonl next to this script). The default is deliberately a separate file
+from measure_cluster.py's snapshots.jsonl: snap.py records use different keys and resolution, and
+compare.py ignores them.
 """
 import argparse
 import json
@@ -56,7 +58,7 @@ def parse_args(argv):
     p.add_argument("--groups", default=env("GROUPS", "group-0"))
     p.add_argument("--region", default=None)
     p.add_argument("--profile", default=None)
-    p.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshots.jsonl"))
+    p.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "snap-snapshots.jsonl"))
     a = p.parse_args(argv)
     _validate(p, a)
     return a

@@ -32,7 +32,8 @@ RF="${RF:-3}"
 MIN_ISR="${MIN_ISR:-2}"
 CONFIG_NAME="${CONFIG_NAME:-${CLUSTER_NAME}-config}"
 
-KAFKA_VERSION=3.8.x
+# Kafka version (override via env: KAFKA_VERSION=<an MSK-supported version>).
+KAFKA_VERSION="${KAFKA_VERSION:-3.8.x}"
 # Region: BENCH_REGION, else AWS_REGION / AWS_DEFAULT_REGION, else us-east-1.
 # Must be the Region the CDK stacks were deployed to.
 REGION="${BENCH_REGION:-${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}}"

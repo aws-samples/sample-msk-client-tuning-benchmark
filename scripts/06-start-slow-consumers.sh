@@ -51,6 +51,11 @@ if [[ ! -f "$JAVA_SRC" ]]; then
   exit 1
 fi
 
+# shellcheck source=lib-msk-env.sh
+source "$SCRIPT_DIR/lib-msk-env.sh"
+# Refuse a tuning profile that sets authentication keys (see lib-msk-env.sh).
+msk_check_tuning_props "$TUNING_PROPS"
+
 # Merge mandatory IAM auth with the tunable overrides, exactly like 02. Tuning
 # props come last so they win on any overlap. No per-run consumer overrides here
 # on purpose: the point of the experiment is that only the sleep changes.
@@ -61,8 +66,6 @@ if [[ -f "$TUNING_PROPS" ]]; then
   grep -Ev '^\s*#' "$TUNING_PROPS" | grep -Ev '^\s*$' >> "$MERGED_PROPS" || true
 fi
 
-# shellcheck source=lib-msk-env.sh
-source "$SCRIPT_DIR/lib-msk-env.sh"
 
 echo "Fetching bootstrap brokers for $CLUSTER_ARN..."
 BROKERS=$(aws kafka get-bootstrap-brokers --cluster-arn "$CLUSTER_ARN" \

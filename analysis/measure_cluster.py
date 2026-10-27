@@ -7,7 +7,7 @@ Usage:
   measure_cluster.py <cluster-name> <label> <start-utc> <end-utc> [broker_ids_csv]
       [--region REGION] [--profile PROFILE] [--out FILE]
 
-  start/end are ISO-8601 UTC, e.g. 2026-01-01T10:00:00Z.
+  start/end are ISO-8601 UTC, e.g. 2026-01-01T10:00:00Z; end must be after start.
   broker_ids_csv defaults to 1..NUM_BROKERS (env NUM_BROKERS, default 3).
   Region/profile default to the AWS SDK's own resolution (AWS_REGION, AWS_PROFILE, config).
   Requires boto3: python3 -m pip install -r requirements.txt
@@ -16,10 +16,12 @@ For each broker-level metric it takes the mean of the 1-minute Averages per brok
 reports the mean across brokers AND the min/max broker (the worst broker is the min for the
 *IdlePercent metrics and the max for latency/CPU/queue metrics). Throughput is summed across
 brokers so runs can be compared at equal MessagesInPerSec. Consumer lag comes from a
-CloudWatch Metrics Insights query. The full record is appended as one JSON line to --out
-(default: snapshots.jsonl next to this script).
+CloudWatch Metrics Insights query. The full record (tagged "source": "measure_cluster") is
+appended as one JSON line to --out (default: snapshots.jsonl next to this script), which is the
+file compare.py reads.
 """
 import argparse
+import datetime as dt
 import json
 import os
 import re
@@ -50,6 +52,15 @@ def _validate(parser, args):
             parser.error("invalid %s: %r" % (name.replace("_", "-"), value))
 
 
+def _parse_utc(value):
+    """Parse an ISO-8601 timestamp accepted by _PATTERNS; a missing offset means UTC."""
+    v = value.replace("Z", "+00:00")
+    v = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", v)
+    v = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], v)
+    t = dt.datetime.fromisoformat(v)
+    return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("cluster")
@@ -62,6 +73,11 @@ def parse_args(argv):
     p.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshots.jsonl"))
     a = p.parse_args(argv)
     _validate(p, a)
+    try:
+        if _parse_utc(a.end) <= _parse_utc(a.start):
+            p.error("end (%s) must be after start (%s)" % (a.end, a.start))
+    except ValueError as e:
+        p.error("invalid start/end timestamp: %s" % e)
     if a.broker_ids and not re.fullmatch(r"[0-9]+(,[0-9]+)*", a.broker_ids):
         p.error("broker_ids must be comma-separated integers")
     if a.broker_ids:
@@ -86,7 +102,8 @@ def main(argv):
     def per_broker(m, stat="Average", extra=()):
         return {b: (st.mean(v) if (v := gms(m, b, stat, extra)) else None) for b in ids}
 
-    r = {"label": a.label, "cluster": C, "start": S, "end": E, "brokers": len(ids)}
+    # "source" lets compare.py tell these records apart from other JSON lines (for example snap.py output).
+    r = {"source": "measure_cluster", "label": a.label, "cluster": C, "start": S, "end": E, "brokers": len(ids)}
     for m, k in [("RequestHandlerAvgIdlePercent", "rh"), ("NetworkProcessorAvgIdlePercent", "np"),
                  ("CpuUser", "cpu_user"), ("CpuSystem", "cpu_sys"), ("ProduceTotalTimeMsMean", "produce_ms"),
                  ("FetchConsumerTotalTimeMsMean", "fetch_ms"), ("VolumeQueueLength", "vql")]:
@@ -137,7 +154,8 @@ def main(argv):
     r["time_lag_max_s"] = max(tl) if tl else None
     r["time_lag_p50_s"] = st.median(tl) if tl else None
 
-    print(json.dumps({k: (round(v, 3) if isinstance(v, float) else v) for k, v in r.items() if k != "rh_per_broker"},
+    print(json.dumps({k: (round(v, 3) if isinstance(v, float) else v) for k, v in r.items()
+                      if k not in ("rh_per_broker", "source")},
                      indent=1))
     print("rh_per_broker", r.get("rh_per_broker"))
     with open(a.out, "a") as fh:
