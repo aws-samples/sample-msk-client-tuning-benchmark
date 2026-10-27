@@ -1,0 +1,50 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ConfigMap client-tuning-baseline, generated from scripts/profiles/baseline.properties.
+# Regenerate rather than hand-edit (run from the repo root):
+#   kubectl create configmap client-tuning-baseline -n msk-bench \
+#     --from-file=client-tuning.properties=scripts/profiles/baseline.properties \
+#     --dry-run=client -o yaml > k8s/base/30-configmap-client-tuning-baseline.yaml
+# (then re-add this header and the app.kubernetes.io/part-of label)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: client-tuning-baseline
+  namespace: msk-bench
+  labels:
+    app.kubernetes.io/part-of: msk-bench
+data:
+  client-tuning.properties: |
+    # Profile: baseline (TEMPLATE)
+    # Replace these values with your production client settings so the baseline reproduces production.
+    #
+    # Shipped values are the Apache Kafka 3.9 client defaults, written out explicitly.
+    # The same file is merged into BOTH the producer and the consumer config, so each
+    # client sees the other side's keys too. Kafka ignores unknown keys and only logs a
+    # "supplied but isn't a known config" WARN at startup; this is harmless.
+    #
+    # ---- Producer ----
+    acks=all
+    linger.ms=0
+    batch.size=16384
+    buffer.memory=33554432
+    compression.type=none
+    enable.idempotence=true
+    max.in.flight.requests.per.connection=5
+    send.buffer.bytes=131072
+
+    # ---- Consumer ----
+    fetch.min.bytes=1
+    fetch.max.wait.ms=500
+    max.partition.fetch.bytes=1048576
+    max.poll.records=500
+    max.poll.interval.ms=300000
+    session.timeout.ms=45000
+    heartbeat.interval.ms=3000
+    partition.assignment.strategy=org.apache.kafka.clients.consumer.RangeAssignor,org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+    receive.buffer.bytes=65536
+    auto.commit.interval.ms=5000
+
+    # ---- Both ----
+    connections.max.idle.ms=540000

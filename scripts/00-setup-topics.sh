@@ -1,9 +1,12 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Run on a client host (via run-on-host.sh). Creates the benchmark topics on the
 # Standard cluster with RF=3, min.insync.replicas=2, and a disk-conscious
 # retention (default 1h). Idempotent (--if-not-exists).
 #
-# Usage: ./00-setup-topics.sh <cluster-arn> [topic-prefix] [num-topics] [partitions] [retention-ms]
+# Usage: ./00-setup-topics.sh <cluster-arn> [topic-prefix] [num-topics] [partitions] [retention-ms] [replication-factor] [min-insync-replicas]
 set -uo pipefail
 
 CLUSTER_ARN="${1:?Usage: $0 <cluster-arn> [topic-prefix] [num-topics] [partitions] [retention-ms]}"
@@ -11,8 +14,13 @@ PREFIX="${2:-load-bench}"
 NUM_TOPICS="${3:-12}"
 PARTITIONS="${4:-24}"
 RETENTION_MS="${5:-3600000}"   # 1 hour -- keep disk usage bounded under sustained load
-REPLICATION_FACTOR=3
-MIN_INSYNC_REPLICAS=2
+REPLICATION_FACTOR="${6:-3}"
+MIN_INSYNC_REPLICAS="${7:-2}"
+# Segment roll time. At thousands of partitions per broker, each partition fills its
+# 1 GB default segment slowly, so time-based retention cannot delete anything until the
+# segment rolls, and broker disks can fill even though retention.ms has passed.
+# Default 10 min.
+SEGMENT_MS="${SEGMENT_MS:-600000}"
 
 KAFKA_HOME=/opt/kafka
 PROPS=/opt/kafka/config/client-iam.properties
@@ -35,7 +43,7 @@ echo "Bootstrap brokers: $BROKERS"
 
 for i in $(seq 1 "$NUM_TOPICS"); do
   TOPIC="${PREFIX}-${i}"
-  echo "=== Creating topic '$TOPIC' (partitions=$PARTITIONS, RF=$REPLICATION_FACTOR, min.insync.replicas=$MIN_INSYNC_REPLICAS, retention.ms=$RETENTION_MS) ==="
+  echo "=== Creating topic '$TOPIC' (partitions=$PARTITIONS, RF=$REPLICATION_FACTOR, min.insync.replicas=$MIN_INSYNC_REPLICAS, retention.ms=$RETENTION_MS, segment.ms=$SEGMENT_MS) ==="
   "$KAFKA_HOME/bin/kafka-topics.sh" \
     --bootstrap-server "$BROKERS" \
     --command-config "$PROPS" \
@@ -44,7 +52,8 @@ for i in $(seq 1 "$NUM_TOPICS"); do
     --partitions "$PARTITIONS" \
     --replication-factor "$REPLICATION_FACTOR" \
     --config retention.ms="$RETENTION_MS" \
-    --config min.insync.replicas="$MIN_INSYNC_REPLICAS"
+    --config min.insync.replicas="$MIN_INSYNC_REPLICAS" \
+    --config segment.ms="$SEGMENT_MS"
 done
 
 echo

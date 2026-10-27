@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Run on a CONSUMER host (via run-on-host.sh). Starts one continuous
 # kafka-consumer-perf-test.sh per topic, all under a SINGLE consumer group for
 # this host. Each consumer host should use a DISTINCT group name so the hosts
@@ -9,7 +12,7 @@
 #       [group-name] [fetch-min-bytes] [fetch-max-wait-ms]
 #
 # Defaults: prefix load-bench, 12 topics, group "group-<hostname>". fetch knobs
-# default to Kafka defaults unless passed; anything passed overrides
+# default to client-tuning.properties unless passed; anything passed overrides
 # client-tuning.properties for this run.
 set -uo pipefail
 
@@ -17,8 +20,8 @@ CLUSTER_ARN="${1:?Usage: $0 <cluster-arn> [topic-prefix] [num-topics] [group-nam
 PREFIX="${2:-load-bench}"
 NUM_TOPICS="${3:-12}"
 GROUP_NAME="${4:-group-$(hostname)}"
-FETCH_MIN_BYTES="${5:-}"     # empty => Kafka default (1)
-FETCH_MAX_WAIT_MS="${6:-}"   # empty => Kafka default (500)
+FETCH_MIN_BYTES="${5:-}"     # empty => client-tuning.properties
+FETCH_MAX_WAIT_MS="${6:-}"   # empty => client-tuning.properties
 
 KAFKA_HOME=/opt/kafka
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

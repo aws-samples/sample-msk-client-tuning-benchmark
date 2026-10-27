@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "MskDataPlaneLoadBenchmark",
+      "Effect": "Allow",
+      "Action": [
+        "kafka-cluster:Connect",
+        "kafka-cluster:DescribeCluster",
+        "kafka-cluster:CreateTopic",
+        "kafka-cluster:DescribeTopic",
+        "kafka-cluster:AlterTopic",
+        "kafka-cluster:DescribeTopicDynamicConfiguration",
+        "kafka-cluster:AlterTopicDynamicConfiguration",
+        "kafka-cluster:DeleteTopic",
+        "kafka-cluster:WriteData",
+        "kafka-cluster:ReadData",
+        "kafka-cluster:WriteDataIdempotently",
+        "kafka-cluster:AlterGroup",
+        "kafka-cluster:DescribeGroup",
+        "kafka-cluster:DescribeTransactionalId",
+        "kafka-cluster:AlterTransactionalId"
+      ],
+      "Resource": [
+        "arn:aws:kafka:us-east-1:111122223333:cluster/load-benchmark/*",
+        "arn:aws:kafka:us-east-1:111122223333:topic/load-benchmark/*",
+        "arn:aws:kafka:us-east-1:111122223333:group/load-benchmark/*",
+        "arn:aws:kafka:us-east-1:111122223333:transactional-id/load-benchmark/*"
+      ]
+    }
+  ]
+}

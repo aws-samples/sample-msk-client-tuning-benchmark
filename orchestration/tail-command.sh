@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Checks the status/output of a previously issued SSM command (e.g. one started
 # with --background). If no command-id is given, uses the last one recorded by
 # run-on-host.sh.

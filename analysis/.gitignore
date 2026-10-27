@@ -1,0 +1,3 @@
+# Local measurement output; regenerate per run.
+snapshots.jsonl
+__pycache__/

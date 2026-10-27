@@ -1,3 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
 import * as cdk from 'aws-cdk-lib/core';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
@@ -13,8 +15,9 @@ export interface NetworkStackProps extends cdk.StackProps {
  * broker subnets in at least 2, and 3 gives an even RF=3 spread), a client
  * security group for the producer/consumer hosts, and an MSK broker security
  * group. The MSK cluster is created out-of-band by create-msk-standard-cluster.sh
- * (not by CloudFormation), so the broker SG ingress is opened to the client SG
- * ahead of the cluster's existence.
+ * (not by AWS CloudFormation), so the broker SG ingress is opened to the client
+ * SG ahead of the cluster's existence. No security group allows ingress from
+ * 0.0.0.0/0; the hosts are reached only through AWS Systems Manager.
  */
 export class NetworkStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
@@ -52,16 +55,16 @@ export class NetworkStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
-    // Allow every client host to reach brokers on all client-facing Kafka
-    // ports (plaintext/TLS/SASL-TLS/IAM). The cluster is created out-of-band,
-    // so this rule is in place before the cluster exists.
-    for (const port of [9092, 9094, 9096, 9098]) {
-      this.mskSecurityGroup.addIngressRule(
-        this.clientSecurityGroup,
-        ec2.Port.tcp(port),
-        `Kafka from client hosts (${port})`,
-      );
-    }
+    // Allow client hosts to reach brokers on the IAM-authenticated SASL/TLS
+    // listener only (9098). create-msk-standard-cluster.sh enables IAM auth
+    // with TLS in transit and no other client authentication, so the
+    // plaintext (9092), TLS (9094), and SASL/SCRAM (9096) listeners are not
+    // opened. Add them here only if you enable those auth modes.
+    this.mskSecurityGroup.addIngressRule(
+      this.clientSecurityGroup,
+      ec2.Port.tcp(9098),
+      'Kafka IAM auth (SASL/TLS) from client hosts',
+    );
 
     new CfnOutput(this, 'VpcId', { value: this.vpc.vpcId });
     new CfnOutput(this, 'PrivateSubnetIds', {

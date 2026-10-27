@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Run on any client host. Snapshot of the running producer/consumer processes on
 # THIS host and the tail of each log, so you can eyeball throughput/errors
 # without pulling full logs back via pull-results.sh.

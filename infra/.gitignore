@@ -4,3 +4,5 @@ cdk.out
 !jest.config.js
 *.d.ts
 .cdk.staging
+# Holds account-specific lookups (AZs, AMIs); never commit it.
+cdk.context.json

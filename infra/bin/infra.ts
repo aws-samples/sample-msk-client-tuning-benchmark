@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
 import * as cdk from 'aws-cdk-lib/core';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { NetworkStack } from '../lib/network-stack';
@@ -7,14 +9,21 @@ import { ClientHostStack } from '../lib/client-host-stack';
 const app = new cdk.App();
 
 // ---------------------------------------------------------------------------
-// Account / region. Override without editing this file:
-//   npx cdk deploy --all -c account=123456789012 -c region=us-west-2
-// or set CDK_DEFAULT_ACCOUNT / CDK_DEFAULT_REGION in the environment.
+// Account / region. Nothing is hard-coded: both come from CDK context first,
+// then from the CDK CLI's resolved environment (your AWS profile):
+//   npx cdk deploy --all -c account=111122223333 -c region=us-west-2
+//   AWS_PROFILE=my-profile npx cdk deploy --all   # uses CDK_DEFAULT_ACCOUNT/REGION
+// The region is required because the VPC pins three AZs (<region>a/b/c).
 // ---------------------------------------------------------------------------
-const REGION =
-  app.node.tryGetContext('region') ?? process.env.CDK_DEFAULT_REGION ?? 'us-east-1';
-const ACCOUNT =
+const REGION: string | undefined =
+  app.node.tryGetContext('region') ?? process.env.CDK_DEFAULT_REGION;
+const ACCOUNT: string | undefined =
   app.node.tryGetContext('account') ?? process.env.CDK_DEFAULT_ACCOUNT;
+if (!REGION) {
+  throw new Error(
+    'No region resolved. Pass -c region=<region> or configure a default region for your AWS profile.',
+  );
+}
 const env = ACCOUNT ? { account: ACCOUNT, region: REGION } : { region: REGION };
 
 // The name the Standard MSK cluster is created with by
@@ -50,7 +59,7 @@ const producer = new ClientHostStack(app, 'LoadBenchmarkProducerStack', {
   instanceType: new ec2.InstanceType(PRODUCER_INSTANCE_TYPE),
   hostCount: 1,
 });
-producer.addDependency(network);
+producer.addStackDependency(network);
 
 // A fleet of consumer hosts, one stack per host so each can be created,
 // destroyed, and driven independently (spin off as many as you want). Each
@@ -64,5 +73,5 @@ for (let i = 0; i < CONSUMER_COUNT; i++) {
     instanceType: new ec2.InstanceType(CONSUMER_INSTANCE_TYPE),
     hostCount: 1,
   });
-  consumer.addDependency(network);
+  consumer.addStackDependency(network);
 }

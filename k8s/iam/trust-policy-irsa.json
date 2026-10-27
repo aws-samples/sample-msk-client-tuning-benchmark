@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowIrsaMskBenchClient",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::111122223333:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/REPLACE_ME_OIDC_ID"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.us-east-1.amazonaws.com/id/REPLACE_ME_OIDC_ID:sub": "system:serviceaccount:msk-bench:msk-bench-client",
+          "oidc.eks.us-east-1.amazonaws.com/id/REPLACE_ME_OIDC_ID:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}

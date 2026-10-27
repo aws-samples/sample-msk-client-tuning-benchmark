@@ -1,12 +1,15 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Sourced by the host-side scripts. Selects the MSK control-plane endpoint used
 # by `aws kafka ...` calls (get-bootstrap-brokers), based on MSK_ENDPOINT_URL:
 #   unset / prod / production -> production control plane (the default here)
-#   <any url>                 -> that endpoint verbatim (e.g. a beta endpoint)
+#   <any url>                 -> that endpoint verbatim (e.g. a custom or VPC endpoint)
 #
-# The benchmark cluster is a plain production Standard cluster, so prod is the
-# right default. This indirection is kept so the same scripts can be pointed at
-# a non-prod endpoint without edits.
+# The benchmark targets a regular Amazon MSK Provisioned (Standard broker) cluster,
+# so the public regional endpoint is the right default. The indirection lets the
+# same scripts be pointed at another endpoint without edits.
 
 _msk_endpoint_raw="${MSK_ENDPOINT_URL:-prod}"
 

@@ -1,0 +1,16 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# SASL/IAM bootstrap string of the Amazon MSK cluster (port 9098). Fill it from:
+#   aws kafka get-bootstrap-brokers --cluster-arn <arn> \
+#     --query BootstrapBrokerStringSaslIam --output text
+# Pods refuse to start (ERROR line, exit 1) while BOOTSTRAP_SERVERS still contains REPLACE_ME.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: msk-bootstrap
+  namespace: msk-bench
+  labels:
+    app.kubernetes.io/part-of: msk-bench
+data:
+  BOOTSTRAP_SERVERS: "REPLACE_ME_BOOTSTRAP_SERVERS"

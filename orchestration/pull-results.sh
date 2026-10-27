@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Pushes /opt/load-benchmark/results from a client host up to S3, then syncs it
 # down to the local results/ dir. Safe to run any time (e.g. to check on a
 # --background job started by run-on-host.sh).
@@ -72,8 +75,13 @@ if [[ "$STATUS" != "Success" ]]; then
     --query 'StandardErrorContent' --output text >&2
 fi
 
-echo "==> Syncing s3://$BUCKET/results/ -> $LOCAL_RESULTS_DIR/"
-"${AWSCLI[@]}" s3 sync "s3://$BUCKET/results/" "$LOCAL_RESULTS_DIR/" --only-show-errors
+# Skip the live, uncompressed *.log files: over a multi-day run each one grows
+# to ~10 GB and syncing them all fills the local disk. Rotated *.gz files and
+# other result files are still pulled. To fetch one live log on purpose:
+#   aws s3 cp s3://$BUCKET/results/<name>.log ./results/
+echo "==> Syncing s3://$BUCKET/results/ -> $LOCAL_RESULTS_DIR/ (excluding live *.log)"
+"${AWSCLI[@]}" s3 sync "s3://$BUCKET/results/" "$LOCAL_RESULTS_DIR/" \
+  --exclude "*.log" --only-show-errors
 
 echo "==> Done. Local results in $LOCAL_RESULTS_DIR/"
 ls -la "$LOCAL_RESULTS_DIR/"

@@ -1,0 +1,3 @@
+# Only the fat jar is needed in the build context.
+*
+!target/kstreams-emulator.jar

@@ -1,0 +1,71 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# workload-low-density.yaml -- low partition and client density (blog test case 1).
+#
+# A small, simple workload: 2 topics, a handful of producer clients and one
+# consumer group per topic. Use it to smoke-test the harness end to end and to
+# see the effect of client tuning when the cluster is lightly loaded.
+#
+#   python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --summary-only
+#   python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml > /tmp/out.yaml
+#   python3 k8s/gen-workload.py k8s/examples/workload-low-density.yaml --tuning baseline > /tmp/out.yaml
+#
+# Topics (create them first; the pods do not create topics):
+#   scripts/00-setup-topics.sh <cluster-arn> load-bench 2 12     # load-bench-1..2, 12 partitions each
+#
+# Parsed by gen-workload.py's stdlib YAML subset: block maps/lists, [flow, lists],
+# {flow: maps}, quoted/plain scalars, # comments. "name-{1..2}" expands to a range.
+
+name: low-density
+namespace: msk-bench
+
+# Build and push the image per k8s/README.md, then put its URI here (or pass --image).
+image: 111122223333.dkr.ecr.us-east-1.amazonaws.com/msk-bench-client:latest
+image_pull_policy: IfNotPresent
+
+# Client tuning profile -> ConfigMap client-tuning-<profile>:
+#   aws-tuned = scripts/profiles/aws-tuned.properties (k8s/base/31-...)
+#   baseline  = scripts/profiles/baseline.properties  (k8s/base/30-...); replace its
+#               values with your production client settings
+# Any other profile works once its ConfigMap exists. Override per run with --tuning.
+tuning: aws-tuned
+
+service_account: msk-bench-client
+bootstrap_configmap: msk-bootstrap
+aws_region: us-east-1
+report_interval_ms: 60000
+record_size: 1000
+
+spread:
+  topology_keys: [kubernetes.io/hostname]
+  max_skew: 1
+  when_unsatisfiable: ScheduleAnyway
+
+resources:
+  consumer: {cpu: 250m, memory: 512Mi}
+  producer: {cpu: "1", memory: 2Gi}
+
+# One group per topic, one member per group.
+consumers:
+  total_groups: 2
+  group_prefix: bench-cg
+  fanout_mode: round-robin
+  round_robin:
+    topics: ["load-bench-{1..2}"]
+
+# One Deployment per topic, 2 KafkaProducer clients per pod = 4 producer clients.
+producers:
+  - name: mp
+    layout: per-topic
+    topics: ["load-bench-{1..2}"]
+    replicas: 1
+    producers_per_pod: 2
+    total_mb_per_sec: 10        # uncompressed, split evenly over the 2 pods
+
+# Egress estimate inputs (MB/s per topic). Used for the printed summary only.
+estimate:
+  topic_mb_per_sec:
+    "load-bench-*": 5
+  partitions_per_topic:
+    "load-bench-*": 12

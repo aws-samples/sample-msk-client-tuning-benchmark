@@ -1,9 +1,17 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
 import * as cdk from 'aws-cdk-lib/core';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { CfnOutput } from 'aws-cdk-lib/core';
+
+// Pinned checksums for the client-host downloads in user data. Update them together
+// with the version numbers in the URLs below.
+const KAFKA_TGZ_SHA512 =
+  '01186a5086b5ae753811ee71808a797baec1303d4e0d4b1c0acf42c489654a7b8988136f8469d0b66f0be439f8e3e9b816171ea0b0d7a36462b07aa2d3ef0023'; // pragma: allowlist secret - public SHA-512 checksum, not a secret
+const MSK_IAM_AUTH_JAR_SHA256 = '735dd058b81d088e767770d6cc4e7f1a1beea815ced18b66a23b35fd87651e77'; // pragma: allowlist secret - public SHA-256 checksum, not a secret
 
 export interface ClientHostStackProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
@@ -56,6 +64,9 @@ export class ClientHostStack extends cdk.Stack {
     this.scriptsBucket = new s3.Bucket(this, 'ScriptsBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
+      // Deny any non-TLS request to the bucket.
+      enforceSSL: true,
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
@@ -81,6 +92,7 @@ export class ClientHostStack extends cdk.Stack {
     const transactionalIdResources = props.clusterNames.map(
       (name) => `arn:${this.partition}:kafka:${this.region}:${this.account}:transactional-id/${name}/*`,
     );
+    const configurationResource = `arn:${this.partition}:kafka:${this.region}:${this.account}:configuration/*`;
 
     // Data-plane: connect, describe, produce, consume, manage topics + groups.
     role.addToPolicy(
@@ -99,45 +111,72 @@ export class ClientHostStack extends cdk.Stack {
           'kafka-cluster:WriteDataIdempotently',
           'kafka-cluster:AlterGroup',
           'kafka-cluster:DescribeGroup',
-          'kafka-cluster:*TransactionalId*',
+          'kafka-cluster:DescribeTransactionalId',
+          'kafka-cluster:AlterTransactionalId',
         ],
         resources: [...clusterResources, ...topicResources, ...groupResources, ...transactionalIdResources],
       }),
     );
 
-    // Control-plane reads (GetBootstrapBrokers, DescribeCluster*) and the
-    // CloudWatch reads/writes the dashboard script performs.
+    // Control-plane reads scoped to the benchmark cluster(s): bootstrap
+    // brokers, cluster description, and node list.
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: [
           'kafka:GetBootstrapBrokers',
           'kafka:DescribeCluster',
           'kafka:DescribeClusterV2',
-          'kafka:DescribeConfiguration',
-          'kafka:DescribeConfigurationRevision',
+          'kafka:ListNodes',
+        ],
+        resources: clusterResources,
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['kafka:DescribeConfiguration', 'kafka:DescribeConfigurationRevision'],
+        resources: [configurationResource],
+      }),
+    );
+
+    // Read-only list/metric calls. These APIs do not support resource-level
+    // permissions, so the resource must be '*'.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
           'kafka:ListClusters',
           'kafka:ListClustersV2',
-          'kafka:ListNodes',
           'kafka:ListConfigurations',
           'cloudwatch:GetMetricData',
           'cloudwatch:GetMetricStatistics',
-          'cloudwatch:PutDashboard',
-          'cloudwatch:GetDashboard',
         ],
         resources: ['*'],
+      }),
+    );
+
+    // scripts/15-put-dashboard.sh can be run from a host; dashboards are
+    // account-global resources (no region in the ARN).
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['cloudwatch:PutDashboard', 'cloudwatch:GetDashboard'],
+        resources: [`arn:${this.partition}:cloudwatch::${this.account}:dashboard/*`],
       }),
     );
 
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       'set -eux',
-      'dnf install -y java-17-amazon-corretto-headless jq python3 python3-pip bc logrotate cronie',
+      'dnf install -y java-17-amazon-corretto-headless jq python3 bc logrotate cronie',
       'cd /opt',
-      'curl -sSL -o kafka.tgz https://archive.apache.org/dist/kafka/3.9.0/kafka_2.13-3.9.0.tgz',
+      // Downloads are pinned and verified; the host bootstrap fails (set -e) on a mismatch.
+      // Kafka: sha512 from archive.apache.org/dist/kafka/3.9.2/kafka_2.13-3.9.2.tgz.sha512.
+      'curl -fsSL --retry 5 -o kafka.tgz https://archive.apache.org/dist/kafka/3.9.2/kafka_2.13-3.9.2.tgz',
+      `echo "${KAFKA_TGZ_SHA512}  kafka.tgz" | sha512sum -c -`,
       'tar xzf kafka.tgz',
-      'ln -s /opt/kafka_2.13-3.9.0 /opt/kafka',
-      'curl -sSL -o /opt/kafka/libs/aws-msk-iam-auth.jar ' +
+      'ln -s /opt/kafka_2.13-3.9.2 /opt/kafka',
+      // aws-msk-iam-auth: sha256 from the .sha256 file published with the GitHub release.
+      'curl -fsSL --retry 5 -o /opt/kafka/libs/aws-msk-iam-auth.jar ' +
         'https://github.com/aws/aws-msk-iam-auth/releases/download/v2.2.0/aws-msk-iam-auth-2.2.0-all.jar',
+      `echo "${MSK_IAM_AUTH_JAR_SHA256}  /opt/kafka/libs/aws-msk-iam-auth.jar" | sha256sum -c -`,
       // Mandatory IAM auth config. Load scripts pass this AND the tunable
       // client-tuning.properties to the perf tools, so this file only carries
       // the auth bits that must always be present.
@@ -150,7 +189,6 @@ export class ClientHostStack extends cdk.Stack {
       'echo \'export PATH=/opt/kafka/bin:$PATH\' >> /etc/profile.d/kafka.sh',
       'mkdir -p /opt/load-benchmark/scripts /opt/load-benchmark/results',
       'chmod -R 755 /opt/load-benchmark',
-      'pip3 install boto3 "kafka-python>=3,<4" aws-msk-iam-sasl-signer-python',
       // Cap load-generator log growth. copytruncate is required because the
       // load scripts hold the logs open via `>` redirect for days -- a plain
       // rename would leave each process writing to an unlinked inode, so the
@@ -190,6 +228,8 @@ export class ClientHostStack extends cdk.Stack {
         role,
         userData,
         userDataCausesReplacement: false,
+        // IMDSv2 only (session tokens required for instance metadata).
+        requireImdsv2: true,
         blockDevices: [
           {
             deviceName: '/dev/xvda',

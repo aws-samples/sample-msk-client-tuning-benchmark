@@ -1,0 +1,8 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+# BuildKit picks this up for k8s/image/Dockerfile (build context = repo root).
+# Send only what the image needs; results/ alone is large.
+*
+!scripts/MultiProducer.java
+!scripts/MultiGroupConsumer.java
+!k8s/image/entrypoint.sh

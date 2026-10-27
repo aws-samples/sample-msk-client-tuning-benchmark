@@ -1,0 +1,70 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# workload-one-consumer-per-partition.yaml -- one consumer per partition (blog test case 7).
+#
+# Each consumer group has as many members as its topic has partitions, so every
+# member owns exactly one partition. To keep the pod count manageable, members are
+# packed into pods: members_per_group KafkaConsumer instances per pod x
+# pods_per_group replicas = 20 x 3 = 60 members per group, matching 60 partitions.
+# This maximizes consumer connections and fetch requests per broker, which is
+# where fetch tuning (fetch.min.bytes, fetch.max.wait.ms) matters most.
+#
+#   python3 k8s/gen-workload.py k8s/examples/workload-one-consumer-per-partition.yaml --summary-only
+#   python3 k8s/gen-workload.py k8s/examples/workload-one-consumer-per-partition.yaml > /tmp/out.yaml
+#   python3 k8s/gen-workload.py k8s/examples/workload-one-consumer-per-partition.yaml --tuning baseline > /tmp/out.yaml
+#
+# Topics (create them first):
+#   scripts/00-setup-topics.sh <cluster-arn> load-bench 4 60     # load-bench-1..4, 60 partitions each
+
+name: one-consumer-per-partition
+namespace: msk-bench
+
+image: 111122223333.dkr.ecr.us-east-1.amazonaws.com/msk-bench-client:latest
+image_pull_policy: IfNotPresent
+
+tuning: aws-tuned
+
+service_account: msk-bench-client
+bootstrap_configmap: msk-bootstrap
+aws_region: us-east-1
+report_interval_ms: 60000
+record_size: 1000
+
+spread:
+  topology_keys: [kubernetes.io/hostname]
+  max_skew: 1
+  when_unsatisfiable: ScheduleAnyway
+
+# A pod now runs 20 KafkaConsumer instances, so it needs more CPU and memory
+# than a single-member pod.
+resources:
+  consumer: {cpu: "1", memory: 2Gi}
+  producer: {cpu: "1", memory: 2Gi}
+
+consumers:
+  total_groups: 4               # one group per topic
+  group_prefix: bench-cg
+  fanout_mode: round-robin
+  members_per_group: 20         # KafkaConsumer members per pod (MEMBERS_PER_GROUP)
+  pods_per_group: 3             # Deployment replicas -> 20 x 3 = 60 members per group
+  worker_threads: 0             # process on the poll thread
+  stagger_ms: 200               # delay between member starts inside a pod
+  round_robin:
+    topics: ["load-bench-{1..4}"]
+
+producers:
+  - name: mp
+    layout: per-topic
+    topics: ["load-bench-{1..4}"]
+    replicas: 1
+    producers_per_pod: 5
+    total_mb_per_sec: 40        # uncompressed; 10 MB/s per topic
+
+# partitions_per_topic lets the generator warn when a group has more members than
+# its topic has partitions (the extra members would sit idle).
+estimate:
+  topic_mb_per_sec:
+    "load-bench-*": 10
+  partitions_per_topic:
+    "load-bench-*": 60

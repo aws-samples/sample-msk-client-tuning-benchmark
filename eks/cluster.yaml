@@ -1,0 +1,143 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# eksctl ClusterConfig: Kafka client pods (Java producers/consumers + Kafka
+# Streams) in an existing VPC (for example the one created by
+# infra/ LoadBenchmarkNetworkStack), reaching Amazon MSK cluster
+# "load-benchmark" over IAM auth (port 9098).
+#
+# Before use, replace every REPLACE_ME_* value and the example account ID
+# 111122223333 (grep -n 'REPLACE_ME\|111122223333' eks/cluster.yaml).
+#
+# Create:   eksctl create cluster -f eks/cluster.yaml
+# Validate: eksctl create cluster -f eks/cluster.yaml --dry-run
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: msk-bench-eks
+  region: us-east-1
+  # Use a Kubernetes version that is currently in Amazon EKS standard support
+  # and within +/-1 minor version of your local kubectl client.
+  version: "1.35"
+  tags:
+    project: msk-load-benchmark
+
+# Existing VPC. The private subnets must route 0.0.0.0/0 through a NAT
+# gateway (REPLACE_ME_nat-id) so nodes can pull images and reach AWS APIs.
+# eksctl will NOT create a VPC.
+vpc:
+  id: REPLACE_ME_vpc-id
+  subnets:
+    private:
+      us-east-1a: { id: REPLACE_ME_subnet-a }
+      us-east-1b: { id: REPLACE_ME_subnet-b }
+      us-east-1c: { id: REPLACE_ME_subnet-c }
+  clusterEndpoints:
+    publicAccess: true    # kubectl from your workstation
+    privateAccess: true   # nodes talk to the API server inside the VPC
+  # Optional hardening: restrict the public endpoint to your egress IP.
+  # publicAccessCIDRs: ["203.0.113.10/32"]
+
+accessConfig:
+  authenticationMode: API_AND_CONFIG_MAP
+
+iam:
+  # EKS Pod Identity (not IRSA): no OIDC provider to create/clean up, and the
+  # eks-pod-identity-agent addon below serves credentials to pods.
+  withOIDC: false
+  podIdentityAssociations:
+    - namespace: msk-bench
+      serviceAccountName: msk-bench-client
+      createServiceAccount: true
+      roleName: msk-bench-eks-client-pod-role
+      tags:
+        project: msk-load-benchmark
+      permissionPolicy:
+        Version: "2012-10-17"
+        Statement:
+          # Data plane (same as infra/lib/client-host-stack.ts and
+          # k8s/iam/msk-bench-client-policy.json).
+          - Sid: MskDataPlane
+            Effect: Allow
+            Action:
+              - kafka-cluster:Connect
+              - kafka-cluster:DescribeCluster
+              - kafka-cluster:CreateTopic
+              - kafka-cluster:DescribeTopic
+              - kafka-cluster:AlterTopic
+              - kafka-cluster:DescribeTopicDynamicConfiguration
+              - kafka-cluster:AlterTopicDynamicConfiguration
+              - kafka-cluster:DeleteTopic
+              - kafka-cluster:WriteData
+              - kafka-cluster:ReadData
+              - kafka-cluster:WriteDataIdempotently
+              - kafka-cluster:AlterGroup
+              - kafka-cluster:DescribeGroup
+              - kafka-cluster:DescribeTransactionalId
+              - kafka-cluster:AlterTransactionalId
+            Resource:
+              # 111122223333 -> your AWS account ID; load-benchmark -> your MSK cluster name.
+              - arn:aws:kafka:us-east-1:111122223333:cluster/load-benchmark/*
+              - arn:aws:kafka:us-east-1:111122223333:topic/load-benchmark/*
+              - arn:aws:kafka:us-east-1:111122223333:group/load-benchmark/*
+              # Kafka Streams exactly-once (EOS v2) needs transactional ids.
+              - arn:aws:kafka:us-east-1:111122223333:transactional-id/load-benchmark/*
+          # Control plane reads (bootstrap discovery).
+          - Sid: MskControlPlaneRead
+            Effect: Allow
+            Action:
+              - kafka:GetBootstrapBrokers
+              - kafka:DescribeCluster
+              - kafka:DescribeClusterV2
+              - kafka:ListClustersV2
+              - kafka:ListNodes
+            Resource: "*"
+
+addons:
+  - name: vpc-cni
+    version: latest
+    attachPolicyARNs:
+      - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
+  - name: eks-pod-identity-agent
+    version: latest
+  - name: metrics-server
+    version: latest
+
+managedNodeGroups:
+  - name: kafka-clients
+    # c5n.2xlarge matches the EC2 load hosts (infra/lib/client-host-stack.ts):
+    # 8 vCPU, up to 25 Gbps. Size the node count to your workload.
+    instanceType: c5n.2xlarge
+    amiFamily: AmazonLinux2023
+    desiredCapacity: 14
+    minSize: 2
+    maxSize: 16
+    volumeSize: 50
+    volumeType: gp3
+    privateNetworking: true
+    subnets:
+      - REPLACE_ME_subnet-a
+      - REPLACE_ME_subnet-b
+      - REPLACE_ME_subnet-c
+    labels:
+      role: kafka-client
+    # Attach the client security group that the MSK cluster security group
+    # allows on 9098 (IAM over TLS). VPC-CNI secondary ENIs inherit the
+    # primary ENI's security groups, so pod traffic also carries this SG.
+    securityGroups:
+      attachIDs:
+        - REPLACE_ME_client-sg-id
+    iam:
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+    propagateASGTags: true
+    tags:
+      project: msk-load-benchmark

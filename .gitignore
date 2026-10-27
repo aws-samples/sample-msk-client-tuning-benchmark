@@ -1,4 +1,25 @@
+# Run output (keep the directory)
 results/*
 !results/.gitkeep
+
+# Node / AWS CDK
+node_modules/
+cdk.out/
+cdk.context.json
+
+# Java / Maven
+target/
+
+# Python
+__pycache__/
+*.pyc
+
+# Local environment and logs
+.env
+*.log
 *.tmp
 .DS_Store
+
+# Threat model is kept private (attached to the security review, not published)
+threat-model/
+threat-model*.md

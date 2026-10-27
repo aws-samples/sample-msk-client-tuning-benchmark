@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Run on the PRODUCER host (via run-on-host.sh). Starts one continuous
 # kafka-producer-perf-test.sh per topic, sized so the AGGREGATE ingress hits the
 # target MB/s. Runs the processes detached; use 03-stop-load.sh to stop.
@@ -8,7 +11,7 @@
 #       [target-mb-per-sec] [record-size] [linger-ms] [batch-size]
 #
 # Defaults: prefix load-bench, 12 topics, 180 MB/s aggregate, 1024-byte records.
-# linger-ms / batch-size default to Kafka defaults (0 / 16384) unless passed;
+# linger-ms / batch-size default to the value in client-tuning.properties unless passed;
 # anything you pass here overrides client-tuning.properties for this run.
 set -uo pipefail
 
@@ -17,8 +20,8 @@ PREFIX="${2:-load-bench}"
 NUM_TOPICS="${3:-12}"
 TARGET_MBPS="${4:-180}"     # aggregate MB/s across all topics
 RECORD_SIZE="${5:-1024}"    # bytes
-LINGER_MS="${6:-}"          # empty => Kafka default (0)
-BATCH_SIZE="${7:-}"         # empty => Kafka default (16384)
+LINGER_MS="${6:-}"          # empty => client-tuning.properties
+BATCH_SIZE="${7:-}"         # empty => client-tuning.properties
 
 KAFKA_HOME=/opt/kafka
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

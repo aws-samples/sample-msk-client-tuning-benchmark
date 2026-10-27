@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Runs a host-side script on a client host (producer or consumer) via SSM,
 # without an interactive session:
 #   1. Syncs scripts/ up to the staging S3 bucket
@@ -10,9 +13,11 @@
 # Usage:
 #   ./run-on-host.sh <stack-name> <region> <profile> <script-name> [script-args...]
 #
+# Runs commands through AWS Systems Manager Run Command (AWS-RunShellScript).
+#
 # Examples:
-#   ./run-on-host.sh LoadBenchmarkProducerStack us-east-1 main 00-setup-topics.sh <cluster-arn>
-#   ./run-on-host.sh LoadBenchmarkProducerStack us-east-1 main 01-start-producers.sh --background <cluster-arn>
+#   ./run-on-host.sh LoadBenchmarkProducerStack us-east-1 default 00-setup-topics.sh <cluster-arn>
+#   ./run-on-host.sh LoadBenchmarkProducerStack us-east-1 default 01-start-producers.sh --background <cluster-arn>
 #
 # For long-running scripts (01-start-producers.sh, 02-start-consumers.sh) pass
 # --background as the first script-arg to launch it detached (nohup) on the host
@@ -88,8 +93,9 @@ else
   RUN_LINE="/opt/load-benchmark/scripts/$SCRIPT_NAME$QUOTED_ARGS"
 fi
 
-# Forward MSK_ENDPOINT_URL through to the host so the same scripts can drive a
-# production cluster (default) or an alternate endpoint. See scripts/lib-msk-env.sh.
+# Optional: forward MSK_ENDPOINT_URL to the host to point the host-side
+# `aws kafka` calls at a non-default Amazon MSK endpoint. Leave it unset to use
+# the standard regional endpoint. See scripts/lib-msk-env.sh.
 ENV_LINE=""
 if [[ -n "${MSK_ENDPOINT_URL:-}" ]]; then
   ENV_LINE="export MSK_ENDPOINT_URL=$(printf '%q' "$MSK_ENDPOINT_URL")"

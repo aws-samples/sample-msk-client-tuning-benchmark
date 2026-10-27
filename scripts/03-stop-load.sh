@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
 # Run on any client host. Stops all producer/consumer processes started on THIS
 # host (reads PIDs from /opt/load-benchmark/load-pids.txt). Safe to run even if
 # some processes already exited. Does not affect other hosts in the fleet.
