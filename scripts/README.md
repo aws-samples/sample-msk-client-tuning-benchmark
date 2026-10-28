@@ -64,7 +64,7 @@ ConfigMap `client-tuning-<p>`; see `../k8s/README.md`).
 
 | Profile | What it is |
 |---|---|
-| `aws-tuned` | The blog's recommended settings: `linger.ms=25`, `batch.size=131072`, `compression.type=zstd`, `fetch.min.bytes=128`, `fetch.max.wait.ms=1000`, `max.poll.records=1000`, `CooperativeStickyAssignor`, OS-tuned socket buffers. |
+| `aws-tuned` | The blog's recommended client best practices: `linger.ms=25`, `batch.size=131072`, `compression.type=zstd`, `fetch.min.bytes=128`, `fetch.max.wait.ms=1000`, `max.poll.records=1000`, `CooperativeStickyAssignor`, OS-tuned socket buffers. |
 | `baseline` | A **template**. Replace its values with your production client settings so the baseline reproduces production. As shipped it contains the Apache Kafka 3.9 client defaults, written out explicitly. |
 | `aws-tuned-snappy`, `aws-tuned-lz4` | Identical to `aws-tuned` except `compression.type`, for a codec A/B (for example `../orchestration/run-ab.sh "$CLUSTER_ARN" aws-tuned aws-tuned-snappy`). |
 | `<your-name>` | Bring your own: add `scripts/profiles/<your-name>.properties`. Check it first with `python3 analysis/check_profile.py scripts/profiles/<your-name>.properties`. |

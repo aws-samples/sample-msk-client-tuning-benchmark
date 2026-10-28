@@ -26,7 +26,7 @@ You don't need to run the tests in order. Start from the question you have today
 | Your question | Use | Effort |
 |---|---|---|
 | Is my existing cluster request-bound right now? | [`analysis/diagnose.py`](docs/diagnose.md): read-only health check of a cluster you already run (non-prod or performance) | ~5 minutes, no load, nothing deployed |
-| How far is my client config from the tuned profile? | [`analysis/check_profile.py`](docs/check-profile.md): offline diff of your `.properties` file against `aws-tuned`, with a reason for every setting | ~1 minute, no AWS access |
+| How does my client config compare with the recommended best practices? | [`analysis/check_profile.py`](docs/check-profile.md): offline, setting-by-setting comparison of your `.properties` file with the blog's recommended client best practices (the `aws-tuned` profile), with a reason for every setting | ~1 minute, no AWS access |
 | Would the tuned profile help my workload? | [Test 1: head to head](docs/test-cases/test-1-head-to-head.md): validate the test cluster against production, then baseline vs tuned at average and peak load | One test cluster, a few hours |
 | What actually drives the load on our brokers? | [Test 2: one factor at a time](docs/test-cases/test-2-one-factor-at-a-time.md): partitions and replication factor, producer instances, consumer and broadcast groups, codec mismatch (plus optional slow consumers, Kafka Streams exactly-once, worker threads) | One factor per run |
 | Will we hit IAM connection limits? | [Test 3: maximum client count](docs/test-cases/test-3-max-client-count.md) | Amazon EKS harness |
@@ -252,7 +252,8 @@ scaling, and the container environment contract.
 
 ## Client profiles
 
-Two main profiles ship with the repository, plus two codec variants of `aws-tuned` (`aws-tuned-snappy`,
+Two main profiles ship with the repository: `baseline` (your production settings) and `aws-tuned` (the blog's
+recommended client best practices), plus two codec variants of `aws-tuned` (`aws-tuned-snappy`,
 `aws-tuned-lz4`) that differ only in `compression.type`, for a one-variable codec A/B.
 `scripts/profiles/<profile>.properties` is the source of truth; the `k8s/base/3*-configmap-client-tuning-*.yaml`
 ConfigMaps carry the same values for the EKS harness.

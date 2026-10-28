@@ -2,10 +2,10 @@
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 SPDX-License-Identifier: MIT-0
 -->
-# Check your client config against `aws-tuned`
+# Compare your client config with the recommended best practices
 
 `analysis/check_profile.py` reads your Kafka client `.properties` file and compares it, key by key, with the
-`aws-tuned` profile (`scripts/profiles/aws-tuned.properties`). It runs entirely offline: no AWS calls, no
+blog's recommended client best practices: the `aws-tuned` profile (`scripts/profiles/aws-tuned.properties`). It runs entirely offline: no AWS calls, no
 network, standard library only.
 
 ```bash
